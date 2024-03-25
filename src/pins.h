@@ -31,18 +31,23 @@
 
 //Capteur de distance
 #define PIN_INT_DIST 6       //interrupt capteur de distance
+
 //Comm série
 #define PIN_SDA 8            //SDA
 #define PIN_SCL 9            //SCL
 #define PIN_MOSI 35          //MOSI
 #define PIN_MISO 37          //MISO
 #define PIN_SCK 36           //SCK
+
 //ADC balance
 #define PIN_CS_ADC_SCALE 33  //chip select adc différentiel
+
 //RTC
 #define PIN_INT_RTC 10       //interrupt RTC
+
 //Servo porte
 #define PIN_SERVO 5          //servomoteur porte
+
 //Distribution
 #define PIN_MOTOR_DIST 15    //activation moteur distribution
 #define PIN_SWITCH_DIST 16   //rétroaction moteur distribution
