@@ -9,7 +9,7 @@
 //PINS
 #define PIN_IR_RX 13      //photorécepteur
 #define PIN_IR_TX 17      //del IR
-#define PIN_INT_DIST 8    //interrupt capteur de distance
+#define PIN_INT_DIST 6    //interrupt capteur de distance
 #define PIN_SDA 8         //SDA
 #define PIN_SCL 9         //SCL
 #define PIN_SERVO 5       //servomoteur porte
