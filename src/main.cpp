@@ -5,14 +5,9 @@
 #include <ESP32Servo.h>
 #include <SPI.h>
 #include <U8g2lib.h>
+#include <pins.h>
+#include <svg.h>
 
-//PINS
-#define PIN_IR_RX 13      //photorécepteur
-#define PIN_IR_TX 17      //del IR
-#define PIN_INT_DIST 6    //interrupt capteur de distance
-#define PIN_SDA 8         //SDA
-#define PIN_SCL 9         //SCL
-#define PIN_SERVO 5       //servomoteur porte
 
 //servo
 Servo myservo;
@@ -26,13 +21,12 @@ int sensorDeviceAddress = 0x12;
 int distance;
 int distsanceMin = 300; //distance min pour détecter une presence
 bool measureDistance = false;
-
 //Communication
 bool commToStart = false;
 int counterLEDUptime = 0;
 
 //écran
-U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/36, /* data=*/35, /* cs=*/19, /* dc=*/20, /* reset=*/34); // Enable U8G2_16BIT in u8g2.h
+U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
 
 
 // Timer
