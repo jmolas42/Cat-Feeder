@@ -1,8 +1,3 @@
-/*Lorsque une présence est détecté, on allume une LED IR 1sec que 
-la balise du chat recoit, cette dernière nous envoie un code 
-NEC-IR et on le lit grâce au photorécepteur
-Si tout est beau (code NEC de 0x1234), on ouvre la porte (servo)*/
-
 #include <Arduino.h>
 #include <Wire.h>
 #include "Vl53lxWrapper.h"
@@ -12,16 +7,15 @@ Si tout est beau (code NEC de 0x1234), on ouvre la porte (servo)*/
 #include <U8g2lib.h>
 
 //PINS
-#define PIN_RECV 2 //photorécepteur
-#define PIN_ACTI 1 //del IR
-int xshutPin = 7;
-int interruptPin = 6;
-int sdaPin = 8;
-int sclPin = 9;
+#define PIN_IR_RX 13      //photorécepteur
+#define PIN_IR_TX 17      //del IR
+#define PIN_INT_DIST 8    //interrupt capteur de distance
+#define PIN_SDA 8         //SDA
+#define PIN_SCL 9         //SCL
+#define PIN_SERVO 5       //servomoteur porte
 
 //servo
 Servo myservo;
-int pin = 17;
 bool openDoor = false;
 bool doorOpened = false;
 int counterDoorOpen = 0;
@@ -38,7 +32,7 @@ bool commToStart = false;
 int counterLEDUptime = 0;
 
 //écran
-U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/36, /* data=*/35, /* cs=*/34, /* dc=*/20, /* reset=*/19); // Enable U8G2_16BIT in u8g2.h
+U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/36, /* data=*/35, /* cs=*/19, /* dc=*/20, /* reset=*/34); // Enable U8G2_16BIT in u8g2.h
 
 
 // Timer
@@ -69,17 +63,17 @@ void setup()
     // servo
    ESP32PWM::allocateTimer(1);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
-  myservo.attach(pin, 1000, 2000); // attaches the servo on pin 18 to the servo object
+  myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
   myservo.write(0); //ferme porte
 
   //IR et distance
-  vl53lxWrapper = new Vl53lxWrapper(xshutPin,
-                                    interruptPin,
+  vl53lxWrapper = new Vl53lxWrapper(45, //pas connecté
+                                    PIN_INT_DIST,
                                     sensorDeviceAddress,
-                                    sdaPin,
-                                    sclPin);
-  IrReceiver.begin(PIN_RECV); // Initializes the IR receiver object
-  pinMode(PIN_ACTI, OUTPUT);
+                                    PIN_SDA,
+                                    PIN_SCL);
+  IrReceiver.begin(PIN_IR_RX); // Initializes the IR receiver object
+  pinMode(PIN_IR_TX, OUTPUT);
 
   //ecran
   u8g2.begin();
