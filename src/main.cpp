@@ -7,12 +7,19 @@
 #include <U8g2lib.h>
 #include <pins.h>
 #include <svg.h>
+#include <WiFi.h>
+#include "time.h"
 
 //WiFi
 bool wifiConnected = false;
+const char* ssid     = "REPLACE_WITH_YOUR_SSID";
+const char* password = "REPLACE_WITH_YOUR_PASSWORD";
 
 //Time
 String hourNow = "00:00";
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 0;
+const int   daylightOffset_sec = 3600;
 
 //servo
 Servo myservo;
@@ -335,6 +342,69 @@ void printPortionsMenuNavigation(){
   u8g2.sendBuffer();
 }
 
+String changeTime(String time, bool direction){
+  char charHourMS = time.charAt(0);
+  char charHourLS = time.charAt(1);
+  char charMinutesMS = time.charAt(3);
+  char charMinuteLS = time.charAt(4);
+  if(direction == 1){
+    switch (Item_selected_column)
+    {
+      case 1:
+        if(charHourMS < '2'){
+          time[0] = charHourMS + 1;
+        }
+        break;
+      case 2:
+        if(charHourLS < '9'){
+          time[1] = charHourLS + 1;
+        }
+        break;
+      case 3:
+        if(charMinutesMS < '5'){
+          time[3] = charMinutesMS + 1;
+        }
+        break;
+      case 4:
+        if(charMinuteLS < '9'){
+          time[4] = charMinuteLS + 1;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+  else{
+    switch (Item_selected_column)
+    {
+      case 1:
+        if(charHourMS > '0'){
+          time[0] = charHourMS - 1;
+        }
+        break;
+      case 2:
+        if(charHourLS > '0'){
+          time[1] = charHourLS - 1;
+        }
+        break;
+      case 3:
+        if(charMinutesMS > '0'){
+          time[3] = charMinutesMS - 1;
+        }
+        break;
+      case 4:
+        if(charMinuteLS > '0'){
+          time[4] = charMinuteLS - 1;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return time;
+}
+
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
@@ -465,34 +535,11 @@ void loop()
       }
       if(keypad_up){
         if(Item_selected_row == 2){
-          char charHourMS = timeFeeding1.charAt(0);
-          char charHourLS = timeFeeding1.charAt(1);
-          char charMinutesMS = timeFeeding1.charAt(3);
-          char charMinuteLS = timeFeeding1.charAt(4);
-          switch (Item_selected_column)
-          {
-          case 1:
-            if(charHourMS < '2'){
-              timeFeeding1[0] = charHourMS + 1;
-            }
-            break;
-          case 2:
-            if(charHourLS < '9'){
-              timeFeeding1[1] = charHourLS + 1;
-            }
-            break;
-          case 3:
-            if(charMinutesMS < '5'){
-              timeFeeding1[3] = charMinutesMS + 1;
-            }
-            break;
-          case 4:
-            if(charMinuteLS < '9'){
-              timeFeeding1[4] = charMinuteLS + 1;
-            }
-            break;
-          default:
-            break;
+          if(feedingSelected == 1){
+            timeFeeding1 = changeTime(timeFeeding1, 1);
+          }
+          else if (feedingSelected == 2){
+            timeFeeding2 = changeTime(timeFeeding2, 1);
           }
         }
         printPortionsMenuNavigation();
@@ -500,8 +547,14 @@ void loop()
       }
       if(keypad_down){
         if(Item_selected_row == 2){
-          
+          if(feedingSelected == 1){
+            timeFeeding1 = changeTime(timeFeeding1, 0);
+          }
+          else if (feedingSelected == 2){
+            timeFeeding2 = changeTime(timeFeeding2, 0);
+          }
         }
+        printPortionsMenuNavigation();
         keypad_down = false;
       }
       //sélection
