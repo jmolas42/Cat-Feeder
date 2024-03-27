@@ -8,12 +8,17 @@
 #include <pins.h>
 #include <svg.h>
 
+//WiFi
+bool wifiConnected = false;
+
+//Time
+String hourNow = "00:00";
 
 //servo
 Servo myservo;
-bool openDoor = false;
-bool doorOpened = false;
-int counterDoorOpen = 0;
+bool openDoor = false; //flag porte doit être ouverte
+bool doorOpened = false; //flag si porte ouverte
+int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 
 //Distance
 Vl53lxWrapper *vl53lxWrapper;
@@ -21,17 +26,38 @@ int sensorDeviceAddress = 0x12;
 int distance;
 int distsanceMin = 300; //distance min pour détecter une presence
 bool measureDistance = false;
+
 //Communication
 bool commToStart = false;
 int counterLEDUptime = 0;
 
-//écran
-U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
+//Portions
+int lastFeeding = 1;
+int feedingPortions [2] = {0,0};
+String timeFeeding1 = "08:00";
+String timeFeeding2 = "00:00";
 
+//Batteries
+uint8_t batTag = 0; //batterie balise 0 à 255
+uint8_t batDis = 125; //batterie distributeur 0 à 255
+
+//Interface utilisateur
+U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
+enum Menus  {NAVIGATION_MENU, MAIN_MENU, PORTIONS_MENU, HOUR_MENU, ACTIONS_MENU};
+Menus menu_selected = MAIN_MENU;
+int Item_selected_row = 1;
+int Item_selected_column = 1;
+int feedingSelected = 1;
+bool keypad_up = false;
+bool keypad_down = false;
+bool keypad_left = false;
+bool keypad_right = false;
+bool keypad_select = false;
+long lastDebounceTime = 0;  // the last time the output pin was toggled
+long debounceDelay = 200;    // the debounce time; increase if the output flickers
 
 // Timer
 hw_timer_t *timer = NULL;
-int timerCount = 0; // timer pour le save dans la SD
 volatile bool interruptbool1 = false;
 
 
@@ -39,20 +65,306 @@ void IRAM_ATTR onTimer()  //cmompteur de 500ms
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
   counterLEDUptime++;
-  counterDoorOpen++;
+  counterTimeDoorOpen++;
   measureDistance = true;
+}
+
+
+void keypadUPInterrupt(){
+  if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
+    keypad_up = true;
+    lastDebounceTime = millis(); //overflow après 50 jours????
+  }
+}
+
+void keypadDOWNInterrupt(){
+  if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
+    keypad_down = true;
+    lastDebounceTime = millis(); //overflow après 50 jours????
+  }
+}
+
+void keypadLEFTInterrupt(){
+  if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
+    keypad_left = true;
+    lastDebounceTime = millis(); //overflow après 50 jours????
+  }
+}
+
+void keypadRIGHTInterrupt(){
+  if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
+    keypad_right = true;
+    lastDebounceTime = millis(); //overflow après 50 jours????
+  }
+}
+
+void keypadSELECTInterrupt(){
+  if((millis() - lastDebounceTime) > debounceDelay){
+    keypad_select = true;
+    lastDebounceTime = millis(); //overflow après 50 jours????
+  }
+}
+
+void printMenu(Menus ms){
+
+  u8g2.clearBuffer();
+
+  switch(ms){
+    case NAVIGATION_MENU :
+      u8g2.drawXBMP(0,0,50,50,home_icon);
+      u8g2.drawFrame(2,2,46,46);
+      u8g2.setFont(u8g_font_helvB10);
+      u8g2.drawStr(0, 60, "Accueil"); 
+
+      u8g2.drawXBMP(68,0,50,50,food_icon);
+      //u8g2.drawFrame(70,2,46,46);
+      u8g2.drawStr(65, 60, "Portions");
+
+      u8g2.drawXBMP(136,0,50,50,hour_icon);
+      //u8g2.drawFrame(138,2,46,46);
+      u8g2.drawStr(140, 60, "Heure");
+
+      u8g2.drawXBMP(204,0,50,50,action_icon);
+      //u8g2.drawFrame(206,2,46,46);
+      u8g2.drawStr(204, 60, "Actions");
+      break;
+
+    case MAIN_MENU : 
+      u8g2.setFont(u8g2_font_logisoso30_tf);
+      u8g2.drawStr(0, 40, hourNow.c_str());   
+      u8g2.setFont(u8g2_font_logisoso16_tf);
+      u8g2.drawStr(140, 20, ("Repas:   " + (String)lastFeeding).c_str());        
+      u8g2.drawStr(140, 40, ("Portions: " + (String)feedingPortions[lastFeeding-1]).c_str());     
+      if(wifiConnected){ 
+        u8g2.drawXBMP(0,50,15,15,wifi_icon);
+      }
+      else{
+        u8g2.drawXBMP(0,50,15,15,no_wifi_icon);
+      }
+      //batterie distributeur
+      if(batDis == 0){ //0
+        u8g2.drawXBMP(45,45,25,25,battery_empty_icon);
+      }
+      else if(batDis > 0 && batDis <= 30){ //15
+        u8g2.drawXBMP(45,45,25,25,battery_low_icon);
+      }
+      else if(batDis > 31 && batDis <= 95){ //63
+        u8g2.drawXBMP(45,45,25,25,battery_one_quarter_icon);
+      }
+      else if(batDis > 95 && batDis <= 159){ //127
+        u8g2.drawXBMP(45,45,25,25,battery_half_icon);
+      }
+      else if(batDis > 159 && batDis <= 223){ //191
+        u8g2.drawXBMP(45,45,25,25,battery_three_quarter_icon);
+      }
+      else if(batDis > 223 && batDis <= 255){ //255
+        u8g2.drawXBMP(45,45,25,25,battery_full_icon);
+      }
+      //batterie balise
+      if(batTag == 0){ //0
+        u8g2.drawXBMP(90,45,25,25,battery_empty_icon);
+      }
+      else if(batTag > 0 && batTag <= 30){ //15
+        u8g2.drawXBMP(90,45,25,25,battery_low_icon);
+      }
+      else if(batTag > 31 && batTag <= 95){ //63
+        u8g2.drawXBMP(90,45,25,25,battery_one_quarter_icon);
+      }
+      else if(batTag > 95 && batTag <= 159){ //127
+        u8g2.drawXBMP(90,45,25,25,battery_half_icon);
+      }
+      else if(batTag > 159 && batTag <= 223){ //191
+        u8g2.drawXBMP(90,45,25,25,battery_three_quarter_icon);
+      }
+      else if(batTag > 223 && batTag <= 255){ //255
+        u8g2.drawXBMP(90,45,25,25,battery_full_icon);
+      }
+      u8g2.setFont(u8g2_font_luBS12_tf);
+      u8g2.drawStr(30, 63, "D");
+      u8g2.drawStr(77, 63, "B");
+      u8g2.drawXBMP(237,47,17,17,return_icon);
+      u8g2.drawFrame(236,46,20,18);
+      break;
+
+    case PORTIONS_MENU:
+      u8g2.setFont(u8g2_font_helvR14_tr);
+      u8g2.drawStr(0, 17, "Portion:");
+      u8g2.drawButtonUTF8(70,17, U8G2_BTN_INV, 0, 1, 1, "1");   
+      u8g2.drawButtonUTF8(90,17, U8G2_BTN_BW1, 0, 0, 0, "2");
+      u8g2.drawStr(0, 50, "Heure:");
+      u8g2.drawStr(60,50, timeFeeding1.c_str());
+      u8g2.drawXBMP(237,47,17,17,return_icon);
+      u8g2.drawFrame(236,46,20,18); 
+      break;
+
+    case ACTIONS_MENU :   
+      u8g2.setFont(u8g2_font_helvR14_tr);
+      u8g2.drawStr(0, 17, "Porte:");
+      u8g2.drawButtonUTF8(60,17, U8G2_BTN_INV, 0, 1, 1, "Ouvrir");   
+      u8g2.drawButtonUTF8(120,17, U8G2_BTN_BW1, 0, 0, 0, "Fermer");
+      u8g2.drawStr(0, 38, "Distribution:");
+      u8g2.drawButtonUTF8(108,38, U8G2_BTN_BW1, 0, 0, 0, "Delivrer");
+      u8g2.drawStr(0, 59, "Balise:"); 
+      u8g2.drawButtonUTF8(65,59, U8G2_BTN_BW1, 0, 0, 0, "Ajouter");
+      u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Reset"); 
+      u8g2.drawXBMP(237,47,17,17,return_icon);
+      u8g2.drawFrame(236,46,20,18);
+      break;
+    default : 
+      break;
+  }
+
+  u8g2.sendBuffer(); 
+}
+
+void printNavigationMenuBorders(int selection_last, int selection_now){
+  //enlever ancienne bordure de sélection
+  if(selection_last >= 1 && selection_last<=4){
+    u8g2.setDrawColor(0);
+    int x1 = 2+(68*(selection_last-1));
+    u8g2.drawFrame(x1,2,46,46);
+    u8g2.updateDisplayArea(x1/8,0,7,6); //tuiles...
+  }
+
+  //ajouter nouvelle bordure de sélection
+  if(selection_now >= 1 && selection_now<=4){
+    u8g2.setDrawColor(1);
+    int x2 = 2+(68*(selection_now-1));
+    u8g2.drawFrame(x2,2,46,46);
+    u8g2.updateDisplayArea(x2/8,0,7,6); //tuiles...
+  }
+
+}
+
+void printActionsMenuButtons(){
+  u8g2.clearBuffer();
+  int row = Item_selected_row;
+  int col = Item_selected_column;
+
+  u8g2.setFont(u8g2_font_helvR14_tr);
+  u8g2.drawStr(0, 17, "Porte:");
+  if(row == 1 && col == 1){
+    u8g2.drawButtonUTF8(60,17, U8G2_BTN_INV, 0, 1, 1, "Ouvrir");
+  }else{
+    u8g2.drawButtonUTF8(60,17, U8G2_BTN_BW1, 0, 0, 0, "Ouvrir");
+  }
+  if(row == 1 && col == 2){
+    u8g2.drawButtonUTF8(120,17, U8G2_BTN_INV, 0, 1, 1, "Fermer");
+  }else{
+    u8g2.drawButtonUTF8(120,17, U8G2_BTN_BW1, 0, 0, 0, "Fermer");
+  }
+  u8g2.drawStr(0, 38, "Distribution:");
+  if(row == 2 && col == 1){
+    u8g2.drawButtonUTF8(108,38, U8G2_BTN_INV, 0, 1, 1, "Delivrer");
+  }else{
+    u8g2.drawButtonUTF8(108,38, U8G2_BTN_BW1, 0, 0, 0, "Delivrer");
+  }
+  u8g2.drawStr(0, 59, "Balise:"); 
+  if(row == 3 && col == 1){
+    u8g2.drawButtonUTF8(65,59, U8G2_BTN_INV, 0, 1, 1, "Ajouter");
+  }else{
+    u8g2.drawButtonUTF8(65,59, U8G2_BTN_BW1, 0, 0, 0, "Ajouter");
+  }
+  if(row == 3 && col == 2){
+    u8g2.drawButtonUTF8(134,59, U8G2_BTN_INV, 0, 1, 1, "Reset"); 
+  }else{
+    u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Reset"); 
+  }
+  if(row == 4 && col == 1){
+    u8g2.drawXBMP(237,47,17,17,return_inv_icon);
+  }else{
+    u8g2.drawXBMP(237,47,17,17,return_icon);
+    u8g2.drawFrame(236,46,20,18);
+  }
+  
+  u8g2.updateDisplayArea(7,0,25,8);
+  return;
+}
+
+
+void printPortionsMenuNavigation(){
+  u8g2.clearBuffer();
+  int row = Item_selected_row;
+  int col = Item_selected_column;
+  u8g2.setFont(u8g2_font_helvR14_tr);
+  u8g2.drawStr(0, 17, "Portion:");
+  if(row == 1 && col == 1 || (feedingSelected ==1 && row ==2)){
+    u8g2.drawButtonUTF8(70,17, U8G2_BTN_INV, 0, 1, 1, "1");  
+  }
+  else{
+    u8g2.drawButtonUTF8(70,17, U8G2_BTN_BW1, 0, 0, 0, "1");  
+  }
+  if(row == 1 && col == 2 || (feedingSelected ==2 && row == 2)){
+    u8g2.drawButtonUTF8(90,17, U8G2_BTN_INV, 0, 1, 1, "2");  
+  }
+  else{
+    u8g2.drawButtonUTF8(90,17, U8G2_BTN_BW1, 0, 0, 0, "2");  
+  } 
+  u8g2.drawStr(0, 50, "Heure:");
+  if(feedingSelected == 1){
+    u8g2.drawStr(60,50, timeFeeding1.c_str());
+  }
+  else if (feedingSelected==2){
+    u8g2.drawStr(60,50, timeFeeding2.c_str());
+  }
+  if(row == 2){ //sélectionner chiffre
+    switch (col)
+    {
+    case 1:
+      u8g2.drawLine(61,52,68,52);
+      break;
+    case 2:
+      u8g2.drawLine(71,52,78,52);
+      break;
+    case 3:
+      u8g2.drawLine(86,52,93,52);
+      break;
+    case 4:
+      u8g2.drawLine(96,52,103,52);
+      break;
+    default:
+      break;
+    }
+  }
+  if(row == 3 && col == 1){
+    u8g2.drawXBMP(237,47,17,17,return_inv_icon);
+  }else{
+    u8g2.drawXBMP(237,47,17,17,return_icon);
+    u8g2.drawFrame(236,46,20,18);
+  }
+  u8g2.sendBuffer();
 }
 
 void setup()
 {
+  //----------------------------------------------------MONITEUR SÉRIE
   Serial.begin(115200);
+
+  //----------------------------------------------------ÉCRAN
+  u8g2.begin();
+  u8g2.enableUTF8Print();
+  u8g2.clearBuffer();
+  u8g2.drawXBMP(76,0,103,64,logo);
+  u8g2.sendBuffer();
 
   // timer
   timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
   timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
-  unsigned int timerFactor = 500000;           //500ms
+  unsigned int timerFactor = 1000000;           //1s
   timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
   timerAlarmEnable(timer);
+
+  //-----------------------------------------------------GPIO
+  pinMode(PIN_BUT_UP, INPUT);
+  attachInterrupt(PIN_BUT_UP, keypadUPInterrupt, FALLING);
+  pinMode(PIN_BUT_DOWN, INPUT);
+  attachInterrupt(PIN_BUT_DOWN, keypadDOWNInterrupt, FALLING);
+  pinMode(PIN_BUT_LEFT, INPUT);
+  attachInterrupt(PIN_BUT_LEFT, keypadLEFTInterrupt, FALLING);
+  pinMode(PIN_BUT_RIGHT, INPUT);
+  attachInterrupt(PIN_BUT_RIGHT, keypadRIGHTInterrupt, FALLING);
+  pinMode(PIN_BUT_SELECT, INPUT);
+  attachInterrupt(PIN_BUT_SELECT, keypadSELECTInterrupt, FALLING);
 
     // servo
    ESP32PWM::allocateTimer(1);
@@ -69,17 +381,246 @@ void setup()
   IrReceiver.begin(PIN_IR_RX); // Initializes the IR receiver object
   pinMode(PIN_IR_TX, OUTPUT);
 
-  //ecran
-  u8g2.begin();
-  u8g2.enableUTF8Print();
-  u8g2.clearBuffer();                    // clear the internal memory
-  u8g2.setFont(u8g2_font_logisoso16_tf);
-  u8g2.drawStr(10, 20, "Door close");         // write something to the internal memory
-  u8g2.sendBuffer();
+  //imprime menu principal
+  menu_selected = NAVIGATION_MENU;
+  printMenu(menu_selected);
 }
+
 
 void loop()
 {
+  switch(menu_selected){
+    case NAVIGATION_MENU :
+      if(keypad_right){
+        if(Item_selected_column >=1 && Item_selected_column<=3){
+          printNavigationMenuBorders(Item_selected_column, Item_selected_column+1);
+          Item_selected_column++;
+        }
+        keypad_right = false;
+      }
+      else if(keypad_left){
+        if(Item_selected_column >=2 && Item_selected_column<=4){
+          printNavigationMenuBorders(Item_selected_column, Item_selected_column-1);
+          Item_selected_column--;
+        }        
+        keypad_left = false;
+      }
+      else if(keypad_select){
+        switch(Item_selected_column){
+          case 1:
+            menu_selected = MAIN_MENU;
+            printMenu(menu_selected);
+            break;
+          case 2:
+            menu_selected = PORTIONS_MENU;
+            printMenu(menu_selected);
+            break;
+          case 3:
+            menu_selected = HOUR_MENU;
+            printMenu(menu_selected);
+            break;
+          case 4:
+            menu_selected = ACTIONS_MENU;
+            printMenu(menu_selected);
+            break;
+        }
+        Item_selected_column = 1;
+        keypad_select = false;
+      }
+      break;
+      
+    case MAIN_MENU : 
+      if(keypad_select){
+        menu_selected = NAVIGATION_MENU;
+        printMenu(NAVIGATION_MENU);
+        keypad_select = false;
+      }
+      break;
+
+    case PORTIONS_MENU :
+      //navigation
+      if(keypad_right){
+        if(Item_selected_row == 1 && Item_selected_column == 1){
+          Item_selected_column ++;
+          printPortionsMenuNavigation();
+        }
+        else if(Item_selected_row == 1 && Item_selected_column == 2){ //vers bouton retour
+          Item_selected_row = 3;
+          Item_selected_column = 1;
+          printPortionsMenuNavigation();
+        }
+        keypad_right = false;
+      }
+      if(keypad_left){
+        if(Item_selected_row == 1 && Item_selected_column == 2){
+          Item_selected_column --;
+          printPortionsMenuNavigation();
+        }
+        if(Item_selected_row == 3){
+          Item_selected_row = 1;
+          Item_selected_column = 2;
+          printPortionsMenuNavigation();
+        }
+        keypad_left = false;
+      }
+      if(keypad_up){
+        if(Item_selected_row == 2){
+          char charHourMS = timeFeeding1.charAt(0);
+          char charHourLS = timeFeeding1.charAt(1);
+          char charMinutesMS = timeFeeding1.charAt(3);
+          char charMinuteLS = timeFeeding1.charAt(4);
+          switch (Item_selected_column)
+          {
+          case 1:
+            if(charHourMS < '2'){
+              timeFeeding1[0] = charHourMS + 1;
+            }
+            break;
+          case 2:
+            if(charHourLS < '9'){
+              timeFeeding1[1] = charHourLS + 1;
+            }
+            break;
+          case 3:
+            if(charMinutesMS < '5'){
+              timeFeeding1[3] = charMinutesMS + 1;
+            }
+            break;
+          case 4:
+            if(charMinuteLS < '9'){
+              timeFeeding1[4] = charMinuteLS + 1;
+            }
+            break;
+          default:
+            break;
+          }
+        }
+        printPortionsMenuNavigation();
+        keypad_up = false;
+      }
+      if(keypad_down){
+        if(Item_selected_row == 2){
+          
+        }
+        keypad_down = false;
+      }
+      //sélection
+      if(keypad_select){
+        if(Item_selected_row == 3 && Item_selected_column == 1){ //retour menu navigation
+          menu_selected = NAVIGATION_MENU;
+          printMenu(NAVIGATION_MENU);
+          Item_selected_column = 1;
+          Item_selected_row = 1;
+          keypad_select = false;
+          break;
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //portion 1
+          Item_selected_row = 2;
+          Item_selected_column = 1;
+          feedingSelected = 1;
+          printPortionsMenuNavigation();
+          keypad_select = false;
+          break;
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 2){ //portion 2
+          Item_selected_row = 2;
+          Item_selected_column = 1;
+          feedingSelected = 2;
+          printPortionsMenuNavigation();
+          keypad_select = false;
+          break;
+        }
+        if(Item_selected_row == 2){ //passe de chiffre en chiffre dans l'heure
+          if(Item_selected_column <4){
+            Item_selected_column++;
+            printPortionsMenuNavigation();
+          }else{
+            Item_selected_row = 1;
+            Item_selected_column = feedingSelected;
+            printPortionsMenuNavigation();
+          }
+        }
+        keypad_select = false;
+      }
+
+      break;
+
+    case ACTIONS_MENU :
+      //navigation
+      if(keypad_up){
+        if(Item_selected_row >= 2){
+          Item_selected_row--;
+          if(Item_selected_row == 2 || Item_selected_row == 4){ //remettre colomne a 1
+            Item_selected_column = 1;
+          }
+          printActionsMenuButtons();
+        }
+        keypad_up = false;
+      }
+      if(keypad_down){
+        if(Item_selected_row <= 3){
+          Item_selected_row++;
+          if(Item_selected_row == 2 || Item_selected_row == 4){ //remettre colomne a 1
+            Item_selected_column = 1;
+          }
+          printActionsMenuButtons();
+        }
+        keypad_down = false;
+      }
+      if(keypad_left){
+        if(Item_selected_column==2 && (Item_selected_row == 1 || Item_selected_row == 3)){
+          Item_selected_column--;
+          printActionsMenuButtons();
+        }
+        if(Item_selected_column==1 && Item_selected_row == 4){ //retour sur ligne 3 et ligne 4
+          Item_selected_column = 2;
+          Item_selected_row = 3;
+          printActionsMenuButtons(); 
+        }
+        keypad_left = false;
+      }
+      if(keypad_right){
+        if(Item_selected_column==1 && (Item_selected_row == 1 || Item_selected_row == 3)){
+          Item_selected_column++;
+          printActionsMenuButtons(); 
+        }
+        else if(Item_selected_column==2 && Item_selected_row == 3){ //retour sur ligne 3 et ligne 4
+          Item_selected_column = 1;
+          Item_selected_row = 4;
+          printActionsMenuButtons(); 
+        }
+        keypad_right = false;
+      }
+      //sélection
+      if(keypad_select){
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //ouvrir porte
+
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //fermer porte
+
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //délivrer portion
+
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //ajouter balise
+
+        }
+        if(Item_selected_row == 1 && Item_selected_column == 1){ //reset balise
+
+        }
+        if(Item_selected_row == 4 && Item_selected_column == 1){ //retour menu navigation
+          menu_selected = NAVIGATION_MENU;
+          printMenu(NAVIGATION_MENU);
+          Item_selected_column = 1;
+          Item_selected_row = 1;
+        }
+        keypad_select = false;
+      }
+      break;
+
+    default : 
+      break;
+  }
 
   /*if (IrReceiver.decode()) { //decode IR recu de la balise
     Serial.println("Received something...");    
@@ -93,7 +634,7 @@ void loop()
 
   /*if(openDoor){
     myservo.write(180);
-    counterDoorOpen = 0;
+    counterTimeDoorOpen = 0;
     doorOpened = true;
     u8g2.clearBuffer();                    // clear the internal memory
     u8g2.drawStr(10, 20, "Door open");         // write something to the internal memory
@@ -102,25 +643,25 @@ void loop()
   }
 
   if(doorOpened){
-    Serial.println("counter dooropen : " + (String)counterDoorOpen);
+    Serial.println("counter dooropen : " + (String)counterTimeDoorOpen);
   }
-  if(doorOpened && counterDoorOpen>20 && distance >= distsanceMin){ //ferme la porte après 10 seconde si il ny a plus personne
+  if(doorOpened && counterTimeDoorOpen>10 && distance >= distsanceMin){ //ferme la porte après 10 seconde si il ny a plus personne
       myservo.write(0);
       doorOpened = false;
       u8g2.clearBuffer();                    // clear the internal memory
       u8g2.drawStr(10, 20, "Door close");         // write something to the internal memory
       u8g2.sendBuffer();
   }
-  else if(doorOpened && counterDoorOpen>10 && distance <= distsanceMin){ //quelqun mange toujours
-    counterDoorOpen = 0;
+  else if(doorOpened && counterTimeDoorOpen>10 && distance <= distsanceMin){ //quelqun mange toujours
+    counterTimeDoorOpen = 0;
   }*/
 
-  if(measureDistance){ //mesure distance au 500ms
+  /*if(measureDistance){ //mesure distance au sec
     VL53LX_MultiRangingData_t measurement = vl53lxWrapper->getLatestMeasurement();
     distance = measurement.RangeData->RangeMilliMeter;
     Serial.println(distance);
     measureDistance = false;
-  }
+  }*/
 /*
   if(distance <= distsanceMin){ //Présence détecté : allume DEL IR
     commToStart = true;
