@@ -444,14 +444,18 @@ void setup()
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  int nbTries = 0;
+  while (WiFi.status() != WL_CONNECTED && nbTries<10) { //timeout
     delay(500);
     Serial.print(".");
+    nbTries++;
   }
-  Serial.println("");
-  Serial.println("WiFi connected.");
-  wifiConnected = true;
-  Serial.println(WiFi.localIP());
+  if(WiFi.status() == WL_CONNECTED){ //imprime info si connecté
+    Serial.println("");
+    Serial.println("WiFi connected.");
+    wifiConnected = true;
+    Serial.println(WiFi.localIP());
+  }
 
   //----------------------------------------------------Time & RTC
   configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure
