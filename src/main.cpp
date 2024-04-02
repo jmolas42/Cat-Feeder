@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include "Vl53lxWrapper.h"
 #include <IRremote.h> 
 #include <ESP32Servo.h>
 #include <SPI.h>
@@ -8,18 +7,24 @@
 #include <pins.h>
 #include <svg.h>
 #include <WiFi.h>
+#include <TimeLib.h>
+#include <DS1307RTC.h>
 #include "time.h"
 
 //WiFi
 bool wifiConnected = false;
-const char* ssid     = "REPLACE_WITH_YOUR_SSID";
-const char* password = "REPLACE_WITH_YOUR_PASSWORD";
+const char* ssid     = "Test";
+const char* password = "test1234";
 
 //Time
 String hourNow = "00:00";
+int RTCTimeHour = 0;
+int RTCTimeMinutes =  0;
+int RTCTimeSeconds = 0; 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 0;
-const int   daylightOffset_sec = 3600;
+const int   Offset_sec = -14400; //-4h
+tmElements_t tm;
 
 //servo
 Servo myservo;
@@ -27,14 +32,23 @@ bool openDoor = false; //flag porte doit être ouverte
 bool doorOpened = false; //flag si porte ouverte
 int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 
-//Distance
-Vl53lxWrapper *vl53lxWrapper;
-int sensorDeviceAddress = 0x12;
-int distance;
-int distsanceMin = 300; //distance min pour détecter une presence
-bool measureDistance = false;
 
-//Communication
+
+//----------------------------------------
+// intaISR - Interrupt handler
+//----------------------------------------
+portMUX_TYPE  syncINTA = portMUX_INITIALIZER_UNLOCKED;        // For handling ISR entry/exit
+bool          intaINT  = false;                               // True = Interrupt occured
+unsigned long intervalTimer;                                  // Timer used for checking for lost interrupts
+
+void IRAM_ATTR intaISR() {
+  portENTER_CRITICAL(&syncINTA);
+  intaINT = true;                                             // Signal that MCP INTA occured
+  portEXIT_CRITICAL(&syncINTA);
+}
+
+
+//Communication IR
 bool commToStart = false;
 int counterLEDUptime = 0;
 
@@ -73,44 +87,53 @@ void IRAM_ATTR onTimer()  //cmompteur de 500ms
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
   counterLEDUptime++;
   counterTimeDoorOpen++;
-  measureDistance = true;
 }
 
 
 void keypadUPInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_up = true;
-    lastDebounceTime = millis(); //overflow après 50 jours????
+    lastDebounceTime = millis();
   }
 }
 
 void keypadDOWNInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_down = true;
-    lastDebounceTime = millis(); //overflow après 50 jours????
+    lastDebounceTime = millis();
   }
 }
 
 void keypadLEFTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_left = true;
-    lastDebounceTime = millis(); //overflow après 50 jours????
+    lastDebounceTime = millis();
   }
 }
 
 void keypadRIGHTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_right = true;
-    lastDebounceTime = millis(); //overflow après 50 jours????
+    lastDebounceTime = millis();
   }
 }
 
 void keypadSELECTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay){
     keypad_select = true;
-    lastDebounceTime = millis(); //overflow après 50 jours????
+    lastDebounceTime = millis();
   }
 }
+
+String return2digits(int number) {
+  String ret = "";
+  if (number >= 0 && number < 10) {
+    ret += '0';
+  }
+  ret += String(number);
+  return ret;
+}
+
 
 void printMenu(Menus ms){
 
@@ -417,7 +440,52 @@ void setup()
   u8g2.drawXBMP(76,0,103,64,logo);
   u8g2.sendBuffer();
 
-  // timer
+  //----------------------------------------------------Wi-Fi
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  wifiConnected = true;
+
+  //----------------------------------------------------Time & RTC
+  configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+  }else{
+    RTCTimeHour = timeinfo.tm_hour;
+    RTCTimeMinutes = timeinfo.tm_min;
+    RTCTimeSeconds = timeinfo.tm_sec;
+  }
+  Serial.print(RTCTimeHour);
+  Serial.print(RTCTimeMinutes);
+  Serial.println(RTCTimeSeconds);
+
+  tm.Hour = RTCTimeHour;
+  tm.Minute = RTCTimeMinutes;
+  tm.Second = RTCTimeSeconds;
+
+  bool config=false;
+  if (RTC.write(tm)) {
+    config = true;
+  }
+  
+  if (config) {
+    Serial.print("DS1307 configured Hour=");
+    Serial.print(RTCTimeHour);
+    Serial.print(", Minutes=");
+    Serial.println(RTCTimeMinutes);
+  } else {
+    Serial.println("DS1307 Communication Error :-{");
+    Serial.println("Please check your circuitry");
+  }
+
+  //----------------------------------------------------Timer
   timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
   timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
   unsigned int timerFactor = 1000000;           //1s
@@ -442,12 +510,7 @@ void setup()
   myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
   myservo.write(0); //ferme porte
 
-  //IR et distance
-  vl53lxWrapper = new Vl53lxWrapper(45, //pas connecté
-                                    PIN_INT_DIST,
-                                    sensorDeviceAddress,
-                                    PIN_SDA,
-                                    PIN_SCL);
+  //IR
   IrReceiver.begin(PIN_IR_RX); // Initializes the IR receiver object
   pinMode(PIN_IR_TX, OUTPUT);
 
@@ -459,6 +522,36 @@ void setup()
 
 void loop()
 {
+  tmElements_t tm;
+
+  if (RTC.read(tm)) {
+    Serial.print("Ok, Time = ");
+    Serial.print(return2digits(tm.Hour));
+    Serial.write(':');
+    Serial.print(return2digits(tm.Minute));
+    Serial.write(':');
+    Serial.print(return2digits(tm.Second));
+    Serial.print(", Date (D/M/Y) = ");
+    Serial.print(tm.Day);
+    Serial.write('/');
+    Serial.print(tm.Month);
+    Serial.write('/');
+    Serial.print(tmYearToCalendar(tm.Year));
+    Serial.println();
+    hourNow = return2digits(tm.Hour) + ":" + return2digits(tm.Minute);
+  } else {
+    if (RTC.chipPresent()) {
+      Serial.println("The DS1307 is stopped.  Please run the SetTime");
+      Serial.println("example to initialize the time and begin running.");
+      Serial.println();
+    } else {
+      Serial.println("DS1307 read error!  Please check the circuitry.");
+      Serial.println();
+    }
+    delay(9000);
+  }
+  delay(1000);
+  
   switch(menu_selected){
     case NAVIGATION_MENU :
       if(keypad_right){
@@ -726,4 +819,5 @@ void loop()
     commToStart = false;
     counterLEDUptime = 0;
   }*/
+
 }
