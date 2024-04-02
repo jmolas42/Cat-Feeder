@@ -458,36 +458,38 @@ void setup()
   }
 
   //----------------------------------------------------Time & RTC
-  configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
-  }else{
-    RTCTimeHour = timeinfo.tm_hour;
-    RTCTimeMinutes = timeinfo.tm_min;
-    RTCTimeSeconds = timeinfo.tm_sec;
-  }
-  Serial.print(RTCTimeHour);
-  Serial.print(RTCTimeMinutes);
-  Serial.println(RTCTimeSeconds);
-
-  tm.Hour = RTCTimeHour;
-  tm.Minute = RTCTimeMinutes;
-  tm.Second = RTCTimeSeconds;
-
-  bool config=false;
-  if (RTC.write(tm)) {
-    config = true;
-  }
-  
-  if (config) {
-    Serial.print("DS1307 configured Hour=");
+  if(WiFi.status() == WL_CONNECTED){
+    configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Failed to obtain time");
+    }else{
+      RTCTimeHour = timeinfo.tm_hour;
+      RTCTimeMinutes = timeinfo.tm_min;
+      RTCTimeSeconds = timeinfo.tm_sec;
+    }
     Serial.print(RTCTimeHour);
-    Serial.print(", Minutes=");
-    Serial.println(RTCTimeMinutes);
-  } else {
-    Serial.println("DS1307 Communication Error :-{");
-    Serial.println("Please check your circuitry");
+    Serial.print(RTCTimeMinutes);
+    Serial.println(RTCTimeSeconds);
+
+    tm.Hour = RTCTimeHour;
+    tm.Minute = RTCTimeMinutes;
+    tm.Second = RTCTimeSeconds;
+
+    bool config=false;
+    if (RTC.write(tm)) { //set le RTC
+      config = true;
+    }
+    
+    if (config) {
+      Serial.print("DS1307 configured Hour=");
+      Serial.print(RTCTimeHour);
+      Serial.print(", Minutes=");
+      Serial.println(RTCTimeMinutes);
+    } else {
+      Serial.println("DS1307 Communication Error :-{");
+      Serial.println("Please check your circuitry");
+    }
   }
 
   //----------------------------------------------------Timer
