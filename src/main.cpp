@@ -451,6 +451,7 @@ void setup()
   Serial.println("");
   Serial.println("WiFi connected.");
   wifiConnected = true;
+  Serial.println(WiFi.localIP());
 
   //----------------------------------------------------Time & RTC
   configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure
