@@ -68,7 +68,6 @@ VL53L0X sensor;
 
 //servo
 Servo myservo;
-bool openDoor = false; //flag porte doit être ouverte
 bool doorOpened = false; //flag si porte ouverte
 int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 
@@ -553,6 +552,31 @@ void distribute(){
   digitalWrite(PIN_MOTOR_DIST, LOW); //arrete
 }
 
+void openDoor(){
+  if(!doorOpened){
+  myservo.attach(PIN_SERVO);
+  for (int pos = 169; pos >= 90; pos -= 1) { 
+    myservo.write(pos);             
+    delay(20);                       
+  }
+  myservo.detach();
+  doorOpened = true;
+  }
+}
+
+void closeDoor(){
+  if(doorOpened){
+  myservo.attach(PIN_SERVO);
+  for (int pos = 90; pos <= 169; pos += 1) { 
+    // in steps of 1 degree
+    myservo.write(pos);              
+    delay(20);                      
+  }
+  myservo.detach();
+  doorOpened = false;
+  }
+}
+
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
@@ -697,8 +721,8 @@ void setup()
   //-----------------------------------------------------Servo
   ESP32PWM::allocateTimer(1);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
-  myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
-  myservo.write(0); //ferme porte
+  //myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
+  closeDoor();
 
   //-----------------------------------------------------Capteur de distance
   //sensor.setTimeout(500);
@@ -984,10 +1008,12 @@ void loop()
       //sélection
       if(keypad_select){
         if(Item_selected_row == 1 && Item_selected_column == 1){ //ouvrir porte
-
+          openDoor();
+          Serial.println("door opened");
         }
         if(Item_selected_row == 1 && Item_selected_column == 2){ //fermer porte
-
+          closeDoor();
+          Serial.println("door closed");
         }
         if(Item_selected_row == 2){ //délivrer portion
           distribute();
