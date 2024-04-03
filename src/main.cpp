@@ -181,6 +181,7 @@ void printMenu(Menus ms){
       break;
 
     case MAIN_MENU : 
+      lastMinutes = RTCTimeMinutes;
       u8g2.setFont(u8g2_font_logisoso30_tf);
       u8g2.drawStr(0, 40, hourNow.c_str());   
       u8g2.setFont(u8g2_font_logisoso16_tf);
@@ -481,10 +482,13 @@ void readRTC(){
   if (RTC.read(tm)) {
     Serial.print("Ok, Time = ");
     Serial.print(return2digits(tm.Hour));
+    RTCTimeHour = tm.Hour;
     Serial.write(':');
     Serial.print(return2digits(tm.Minute));
+    RTCTimeMinutes = tm.Minute;
     Serial.write(':');
     Serial.print(return2digits(tm.Second));
+    RTCTimeSeconds = tm.Second;
     Serial.print(", Date (D/M/Y) = ");
     Serial.print(tm.Day);
     Serial.write('/');
@@ -662,7 +666,7 @@ void setup()
   pinMode(PIN_IR_TX, OUTPUT);
 
   //imprime menu principal
-  menu_selected = NAVIGATION_MENU;
+  menu_selected = MAIN_MENU;
   printMenu(menu_selected);
 
   //ferme rgb
@@ -731,6 +735,9 @@ void loop()
       break;
       
     case MAIN_MENU : 
+      if(RTCTimeMinutes != lastMinutes){
+        printMenu(MAIN_MENU); //rafraichi la page (chg de minute)
+      }
       if(keypad_select){
         menu_selected = NAVIGATION_MENU;
         printMenu(NAVIGATION_MENU);
