@@ -70,6 +70,7 @@ int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 
 //Communication IR
 bool commStarted = false;
+bool commToStart = false;
 int counterTxUptime = 0;
 
 //Portions
@@ -101,15 +102,21 @@ int lastMinutes; //dernière minutes pour savoir si on rafraichi l'heure
 // Timer
 hw_timer_t *timer = NULL;
 volatile bool interruptbool1 = false;
+int timerSecond =  0; //pair si timer tombe sur 1 seconde
 
 
 void IRAM_ATTR onTimer()  //compteur de 1 seconde
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
+
+  if(timerSecond % 2 == 0){ //1 seconde
+
+  }
   if(commStarted){
     counterTxUptime++;
   }
   counterTimeDoorOpen++;
+  timerSecond++;
 }
 
 void keypadUPInterrupt(){
@@ -480,22 +487,22 @@ void readRTC(){
   tmElements_t tm;
 
   if (RTC.read(tm)) {
-    Serial.print("Ok, Time = ");
-    Serial.print(return2digits(tm.Hour));
+    //Serial.print("Ok, Time = ");
+    //Serial.print(return2digits(tm.Hour));
     RTCTimeHour = tm.Hour;
-    Serial.write(':');
-    Serial.print(return2digits(tm.Minute));
+    //Serial.write(':');
+    //Serial.print(return2digits(tm.Minute));
     RTCTimeMinutes = tm.Minute;
-    Serial.write(':');
-    Serial.print(return2digits(tm.Second));
+    //Serial.write(':');
+    //Serial.print(return2digits(tm.Second));
     RTCTimeSeconds = tm.Second;
-    Serial.print(", Date (D/M/Y) = ");
-    Serial.print(tm.Day);
-    Serial.write('/');
-    Serial.print(tm.Month);
-    Serial.write('/');
-    Serial.print(tmYearToCalendar(tm.Year));
-    Serial.println();
+    //Serial.print(", Date (D/M/Y) = ");
+    //Serial.print(tm.Day);
+    //Serial.write('/');
+    //Serial.print(tm.Month);
+    //Serial.write('/');
+    //Serial.print(tmYearToCalendar(tm.Year));
+    //Serial.println();
     hourNow = return2digits(tm.Hour) + ":" + return2digits(tm.Minute);
   } else {
     if (RTC.chipPresent()) {
@@ -637,7 +644,7 @@ void setup()
   //----------------------------------------------------Timer
   timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
   timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
-  unsigned int timerFactor = 1000000;           //1s
+  unsigned int timerFactor = 500000;           //500ms
   timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
   timerAlarmEnable(timer);
 
@@ -654,7 +661,8 @@ void setup()
   attachInterrupt(PIN_BUT_SELECT, keypadSELECTInterrupt, FALLING);
 
   //-----------------------------------------------------BATTERIE
-
+  pinMode(PIN_BATT_MON, INPUT);
+  batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
 
   //-----------------------------------------------------Servo
   ESP32PWM::allocateTimer(1);
@@ -681,22 +689,32 @@ void setup()
 
 void loop()
 {
-  tone(PIN_IR_TX, 50);
-  delay(400);
-  noTone(PIN_IR_TX);
-  if (IrReceiver.decode()) { //decode IR recu de la balise
-    Serial.println("Received something...");    
-    IrReceiver.printIRResultShort(&Serial); // Prints a summary of the received data
-    Serial.println();
-    if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
-      openDoor = true;
-      Serial.println("Tag code received!");
-      setRGB(148,0,211); //mauve
+
+  if (commToStart){ //débute communication IR
+    tone(PIN_IR_TX, 50); //TX 50hz
+    counterTxUptime = 0;
+    commToStart = false;   
+     commStarted = true;
+  }
+  else if(commStarted){ //communication IR en cours
+    if(counterTxUptime >= 1){ //après 500ms
+      noTone(PIN_IR_TX); //ferme TX
     }
+    if (IrReceiver.decode()) { //décode IR recu de la balise
+      Serial.println("Received something...");    
+      IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
+      Serial.println();
+      if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+        openDoor = true;
+        Serial.println("Tag code received!");
+        setRGB(148,0,211); //flash mauve
+        commStarted = false;
+        delay(500);
+        setRGB(0,0,0); //ferme rgb
+      }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
-  } 
-  delay(3000);
-  setRGB(0,0,0); //ferme rgb
+    }
+  }
 
   //Heure RTC
   readRTC();
