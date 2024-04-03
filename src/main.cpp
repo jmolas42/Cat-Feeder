@@ -986,16 +986,17 @@ void loop()
         if(Item_selected_row == 1 && Item_selected_column == 1){ //ouvrir porte
 
         }
-        if(Item_selected_row == 1 && Item_selected_column == 1){ //fermer porte
+        if(Item_selected_row == 1 && Item_selected_column == 2){ //fermer porte
 
         }
-        if(Item_selected_row == 1 && Item_selected_column == 1){ //délivrer portion
+        if(Item_selected_row == 2){ //délivrer portion
           distribute();
+          Serial.println("delivery done");
         }
-        if(Item_selected_row == 1 && Item_selected_column == 1){ //ajouter balise
+        if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
 
         }
-        if(Item_selected_row == 1 && Item_selected_column == 1){ //reset balise
+        if(Item_selected_row == 3 && Item_selected_column == 2){ //reset balise
 
         }
         if(Item_selected_row == 4 && Item_selected_column == 1){ //retour menu navigation
