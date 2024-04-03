@@ -96,6 +96,7 @@ bool keypad_right = false;
 bool keypad_select = false;
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 200;    // the debounce time; increase if the output flickers
+int lastMinutes; //dernière minutes pour savoir si on rafraichi l'heure
 
 // Timer
 hw_timer_t *timer = NULL;
@@ -110,7 +111,6 @@ void IRAM_ATTR onTimer()  //compteur de 1 seconde
   }
   counterTimeDoorOpen++;
 }
-
 
 void keypadUPInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
@@ -155,7 +155,6 @@ String return2digits(int number) {
   ret += String(number);
   return ret;
 }
-
 
 void printMenu(Menus ms){
 
@@ -332,7 +331,6 @@ void printActionsMenuButtons(){
   u8g2.updateDisplayArea(7,0,25,8);
   return;
 }
-
 
 void printPortionsMenuNavigation(){
   u8g2.clearBuffer();
@@ -526,7 +524,7 @@ void setup()
   digitalWrite(PIN_RGB_G, HIGH);
   pinMode(PIN_RGB_B, OUTPUT);
   digitalWrite(PIN_RGB_B, HIGH);
-  setRGB(255,0,0);
+  setRGB(0,255,0); //vert
 
   //----------------------------------------------------ÉCRAN
   u8g2.begin();
@@ -588,49 +586,49 @@ void setup()
   }
 
   //----------------------------------------------------Balance                      //délais??????????
-  pinMode(33, OUTPUT); // set the SS pin as an output
-  SPI.begin();         // initialize the SPI library
+  pinMode(PIN_CS_ADC_SCALE, OUTPUT); // set the SS pin as an output
+  //SPI.begin();
 
-  digitalWrite(33, LOW);            // set the SS pin to LOW
+  digitalWrite(PIN_CS_ADC_SCALE, LOW);            // set the SS pin to LOW
   uint8_t cmds = 0x90; //0x48
   SPI.transfer(cmds);
-  digitalWrite(33, HIGH); 
+  digitalWrite(PIN_CS_ADC_SCALE, HIGH); 
 
   delay(1000);
 
   //Buffer and unipolar
-  digitalWrite(33, LOW);
+  digitalWrite(PIN_CS_ADC_SCALE, LOW);
   uint8_t cmd = (MAX_CMD_REG | MAX_CTRL1) | MAX_WRITE;
   uint8_t ctrl = 0b01011000; 
   SPI.transfer(cmd);
   SPI.transfer(ctrl);
-  digitalWrite(33, HIGH);
+  digitalWrite(PIN_CS_ADC_SCALE, HIGH);
 
   delay(500);
 
   //gain and Self-calibration
-  digitalWrite(33, LOW);
+  digitalWrite(PIN_CS_ADC_SCALE, LOW);
   uint8_t cmdg = (MAX_CMD_REG | MAX_CTRL3) | MAX_WRITE;
   uint8_t ctrlg = 0b11111000; 
   SPI.transfer(cmdg);
   SPI.transfer(ctrlg);
-  digitalWrite(33, HIGH);
+  digitalWrite(PIN_CS_ADC_SCALE, HIGH);
 
   delay(500);
 
   //Conv
-  digitalWrite(33, LOW);            // set the SS pin to LOW
+  digitalWrite(PIN_CS_ADC_SCALE, LOW);            // set the SS pin to LOW
   uint8_t cmd0 = MAX_CMD_CONV | MAX_SPS_10; //rate 0 (base)
   SPI.transfer(cmd0);
-  digitalWrite(33, HIGH); 
+  digitalWrite(PIN_CS_ADC_SCALE, HIGH); 
   delay(500);
   //Make sure its fine by reading CTRL1
-  digitalWrite(33, LOW);           // set the SS pin HIGH
+  digitalWrite(PIN_CS_ADC_SCALE, LOW);           // set the SS pin HIGH
   uint8_t cmd2 = (MAX_CMD_REG | MAX_CTRL1) | MAX_READ;
   SPI.transfer(cmd2);             // send a write command to the MCP4131 to write at registry address 0x00
   uint8_t val = SPI.transfer(0);
   Serial.println("val : " + (String)val);
-  digitalWrite(33, HIGH);           // set the SS pin HIGH
+  digitalWrite(PIN_CS_ADC_SCALE, HIGH);           // set the SS pin HIGH
 
   //----------------------------------------------------Timer
   timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
@@ -666,6 +664,8 @@ void setup()
   //imprime menu principal
   menu_selected = NAVIGATION_MENU;
   printMenu(menu_selected);
+
+  //ferme rgb
   setRGB(0,0,0);
 }
 
@@ -682,10 +682,12 @@ void loop()
     if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
       openDoor = true;
       Serial.println("Tag code received!");
+      setRGB(148,0,211); //mauve
     }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
   } 
   delay(3000);
+  setRGB(0,0,0); //ferme rgb
   
   
   switch(menu_selected){
