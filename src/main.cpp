@@ -11,6 +11,42 @@
 #include <DS1307RTC.h>
 #include "time.h"
 
+//balance 
+// conversion speeds ((Continuous) Samples Per Second)
+//single:
+#define MAX_CMD_CONV    0x80        // 0b10000000
+#define MAX_SPS_1       0x00
+#define MAX_SPS_2_5     0x01
+#define MAX_SPS_5       0x02
+#define MAX_SPS_10      0x03
+#define MAX_SPS_15      0x04
+#define MAX_SPS_30      0x05
+#define MAX_SPS_60      0x06
+#define MAX_SPS_120     0x07
+// continuous:
+#define MAX_CSPS_60     0x04
+#define MAX_CSPS_120    0x05
+#define MAX_CSPS_240    0x06
+#define MAX_CSPS_480    0x07
+
+// registers: 
+#define MAX_CMD_REG     0xC0        // 0b11000000
+// register addresses:
+#define MAX_STAT1       0x00 << 1
+#define MAX_CTRL1       0x01 << 1
+#define MAX_CTRL2       0x02 << 1
+#define MAX_CTRL3       0x03 << 1
+#define MAX_DATA        0x04 << 1
+#define MAX_SOC         0x05 << 1
+#define MAX_SGC         0x06 << 1
+#define MAX_SCOC        0x07 << 1
+#define MAX_SCGC        0x08 << 1
+#define MAX_READ        0x01
+#define MAX_WRITE       0x00
+
+#define MAX_UNIPOLAR    0x40        // input range: defaults to bipolar (-AREF to +AREF). UNI = (0 to +AREF)
+#define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
+
 //WiFi
 bool wifiConnected = false;
 const char* ssid     = "Test";
@@ -428,6 +464,32 @@ String changeTime(String time, bool direction){
   return time;
 }
 
+uint32_t getWeight(){
+  //read ADC 6 times
+  uint32_t value = 0;
+  for(int i = 0; i<6; i++){
+    digitalWrite(33, LOW);           // set the SS pin HIGH
+    uint8_t cmd = (MAX_CMD_REG | MAX_DATA) | MAX_READ;
+    SPI.transfer(cmd);             // send a write command to the MCP4131 to write at registry address 0x00
+    uint8_t valMSB = SPI.transfer(0);
+    uint8_t valLSB = SPI.transfer(0);
+    uint8_t valLLSB = SPI.transfer(0);
+    //printf("valMSB : 0x%X\r\n", valMSB);
+    //printf("valLSB : 0x%X\r\n", valLSB);
+    value += ((valMSB<<16)|(valLSB<<8)|valLLSB)>>8;
+    digitalWrite(33, HIGH);           // set the SS pin HIGH
+    delay(150);
+  }
+  value = (float)value/6;
+
+  printf("\r\n");
+  printf("valueX : 0x%X\r\n", value);
+  printf("value : %d\r\n", value);
+  //printf("voltage : %.2fV\r\n", ((float)value/65535)*3.3);
+  
+  return value;
+}
+
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
@@ -492,6 +554,51 @@ void setup()
     }
   }
 
+  //----------------------------------------------------Balance                      //délais??????????
+  pinMode(33, OUTPUT); // set the SS pin as an output
+  SPI.begin();         // initialize the SPI library
+
+  digitalWrite(33, LOW);            // set the SS pin to LOW
+  uint8_t cmds = 0x90; //0x48
+  SPI.transfer(cmds);
+  digitalWrite(33, HIGH); 
+
+  delay(1000);
+
+  //Buffer and unipolar
+  digitalWrite(33, LOW);
+  uint8_t cmd = (MAX_CMD_REG | MAX_CTRL1) | MAX_WRITE;
+  uint8_t ctrl = 0b01011000; 
+  SPI.transfer(cmd);
+  SPI.transfer(ctrl);
+  digitalWrite(33, HIGH);
+
+  delay(500);
+
+  //gain and Self-calibration
+  digitalWrite(33, LOW);
+  uint8_t cmdg = (MAX_CMD_REG | MAX_CTRL3) | MAX_WRITE;
+  uint8_t ctrlg = 0b11111000; 
+  SPI.transfer(cmdg);
+  SPI.transfer(ctrlg);
+  digitalWrite(33, HIGH);
+
+  delay(500);
+
+  //Conv
+  digitalWrite(33, LOW);            // set the SS pin to LOW
+  uint8_t cmd0 = MAX_CMD_CONV | MAX_SPS_10; //rate 0 (base)
+  SPI.transfer(cmd0);
+  digitalWrite(33, HIGH); 
+  delay(500);
+  //Make sure its fine by reading CTRL1
+  digitalWrite(33, LOW);           // set the SS pin HIGH
+  uint8_t cmd2 = (MAX_CMD_REG | MAX_CTRL1) | MAX_READ;
+  SPI.transfer(cmd2);             // send a write command to the MCP4131 to write at registry address 0x00
+  uint8_t val = SPI.transfer(0);
+  Serial.println("val : " + (String)val);
+  digitalWrite(33, HIGH);           // set the SS pin HIGH
+
   //----------------------------------------------------Timer
   timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
   timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
@@ -529,7 +636,7 @@ void setup()
 
 void loop()
 {
-  tmElements_t tm;
+  /*tmElements_t tm;
 
   if (RTC.read(tm)) {
     Serial.print("Ok, Time = ");
@@ -556,8 +663,9 @@ void loop()
       Serial.println();
     }
     delay(9000);
+
   }
-  delay(1000);
+  delay(1000);/*
   
   switch(menu_selected){
     case NAVIGATION_MENU :
@@ -774,6 +882,7 @@ void loop()
     default : 
       break;
   }
+
 
   /*if (IrReceiver.decode()) { //decode IR recu de la balise
     Serial.println("Received something...");    
