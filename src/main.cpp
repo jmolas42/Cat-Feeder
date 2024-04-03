@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <TimeLib.h>
 #include <DS1307RTC.h>
+#include <VL53L0X.h>
 #include "time.h"
 
 //balance 
@@ -62,6 +63,9 @@ const long  gmtOffset_sec = 0;
 const int   Offset_sec = -14400; //-4h
 tmElements_t tm;
 
+//capteur de distance
+VL53L0X sensor;
+
 //servo
 Servo myservo;
 bool openDoor = false; //flag porte doit être ouverte
@@ -72,6 +76,7 @@ int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 bool commStarted = false;
 bool commToStart = false;
 int counterTxUptime = 0;
+bool IRTXup = false; //état led IR (TX)
 
 //Portions
 int lastFeeding = 1;
@@ -81,7 +86,7 @@ String timeFeeding2 = "00:00";
 
 //Batteries
 uint8_t batTag = 0; //batterie balise 0 à 255
-uint8_t batDis = 125; //batterie distributeur 0 à 255
+uint8_t batDis = 0; //batterie distributeur 0 à 255
 
 //Interface utilisateur
 U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
@@ -111,6 +116,9 @@ void IRAM_ATTR onTimer()  //compteur de 1 seconde
 
   if(timerSecond % 2 == 0){ //1 seconde
 
+  }
+  if(timerSecond % 6 == 0){ //3 seconde
+    commToStart = true;
   }
   if(commStarted){
     counterTxUptime++;
@@ -153,6 +161,7 @@ void keypadSELECTInterrupt(){
     lastDebounceTime = millis();
   }
 }
+
 
 String return2digits(int number) {
   String ret = "";
@@ -523,6 +532,27 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
   analogWrite(PIN_RGB_B, 255-b);
 }
 
+/*lis le capteur de distance, retourne la distance en mm*/
+int readDistance(){
+  if (sensor.timeoutOccurred()) { 
+    Serial.print(" TIMEOUT"); 
+    if (!sensor.init()) //realive
+    {
+      Serial.println("Failed to detect and initialize sensor!");
+    }
+    sensor.startContinuous();
+  }
+  return sensor.readRangeContinuousMillimeters();
+}
+
+/*tourne une fois le distributeur*/
+void distribute(){
+  digitalWrite(PIN_MOTOR_DIST, HIGH);
+  while(digitalRead(PIN_SWITCH_DIST) == LOW){} //tourne
+  while(digitalRead(PIN_SWITCH_DIST) == HIGH){} //tourne encore
+  digitalWrite(PIN_MOTOR_DIST, LOW); //arrete
+}
+
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
@@ -670,6 +700,20 @@ void setup()
   myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
   myservo.write(0); //ferme porte
 
+  //-----------------------------------------------------Capteur de distance
+  //sensor.setTimeout(500);
+  //sensor.setTimeout(0);
+  if (!sensor.init())
+  {
+    Serial.println("Failed to detect and initialize sensor!");
+  }
+  sensor.startContinuous();
+
+  //-----------------------------------------------------Distribution
+  pinMode(PIN_MOTOR_DIST, OUTPUT);
+  digitalWrite(PIN_MOTOR_DIST, LOW);
+  pinMode(PIN_SWITCH_DIST, INPUT);
+
   //-----------------------------------------------------IR
   IrReceiver.begin(PIN_IR_RX); // Initializes the IR receiver object
   pinMode(PIN_IR_TX, OUTPUT);
@@ -690,17 +734,45 @@ void setup()
 void loop()
 {
 
-  if (commToStart){ //débute communication IR
+  /*if (commToStart){ //débute communication IR
     tone(PIN_IR_TX, 50); //TX 50hz
     counterTxUptime = 0;
     commToStart = false;   
-     commStarted = true;
+    commStarted = true;
+    IRTXup = true;
+    Serial.println("comm started");
   }
   else if(commStarted){ //communication IR en cours
-    if(counterTxUptime >= 1){ //après 500ms
+    if(counterTxUptime >= 1 && IRTXup){ //après 500ms
       noTone(PIN_IR_TX); //ferme TX
+      Serial.println("led closed");
+      IRTXup = false;
     }
-    if (IrReceiver.decode()) { //décode IR recu de la balise
+    else if (IrReceiver.decode() && !IRTXup) { //décode IR recu de la balise
+      Serial.println("Received something...");    
+      IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
+      Serial.println();
+      if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+        openDoor = true;
+        Serial.println("Tag code received!");
+        setRGB(148,0,211); //flash mauve
+        commStarted = false;
+        delay(500);
+        setRGB(0,0,0); //ferme rgb
+      }
+    IrReceiver.resume(); // Important, enables to receive the next IR signal
+    }
+  }*/
+
+
+  /*Serial.println("start");
+  tone(PIN_IR_TX, 50);
+  delay(400);
+  noTone(PIN_IR_TX);
+  delay(100);
+  Serial.println("listen");
+  for(int i =0; i<50000000; i++){
+    if(IrReceiver.decode()) { //décode IR recu de la balise
       Serial.println("Received something...");    
       IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
       Serial.println();
@@ -715,9 +787,11 @@ void loop()
     IrReceiver.resume(); // Important, enables to receive the next IR signal
     }
   }
+  delay(1000);*/
 
   //Heure RTC
   readRTC();
+
   
   switch(menu_selected){
     case NAVIGATION_MENU :
@@ -916,7 +990,7 @@ void loop()
 
         }
         if(Item_selected_row == 1 && Item_selected_column == 1){ //délivrer portion
-
+          distribute();
         }
         if(Item_selected_row == 1 && Item_selected_column == 1){ //ajouter balise
 
