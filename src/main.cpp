@@ -68,25 +68,9 @@ bool openDoor = false; //flag porte doit être ouverte
 bool doorOpened = false; //flag si porte ouverte
 int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
 
-
-
-//----------------------------------------
-// intaISR - Interrupt handler
-//----------------------------------------
-portMUX_TYPE  syncINTA = portMUX_INITIALIZER_UNLOCKED;        // For handling ISR entry/exit
-bool          intaINT  = false;                               // True = Interrupt occured
-unsigned long intervalTimer;                                  // Timer used for checking for lost interrupts
-
-void IRAM_ATTR intaISR() {
-  portENTER_CRITICAL(&syncINTA);
-  intaINT = true;                                             // Signal that MCP INTA occured
-  portEXIT_CRITICAL(&syncINTA);
-}
-
-
 //Communication IR
-bool commToStart = false;
-int counterLEDUptime = 0;
+bool commStarted = false;
+int counterTxUptime = 0;
 
 //Portions
 int lastFeeding = 1;
@@ -118,10 +102,12 @@ hw_timer_t *timer = NULL;
 volatile bool interruptbool1 = false;
 
 
-void IRAM_ATTR onTimer()  //cmompteur de 500ms
+void IRAM_ATTR onTimer()  //compteur de 1 seconde
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
-  counterLEDUptime++;
+  if(commStarted){
+    counterTxUptime++;
+  }
   counterTimeDoorOpen++;
 }
 
@@ -490,10 +476,57 @@ uint32_t getWeight(){
   return value;
 }
 
+/*Lis et met a jour l'heure à l'aide du RTC*/
+void readRTC(){
+  tmElements_t tm;
+
+  if (RTC.read(tm)) {
+    Serial.print("Ok, Time = ");
+    Serial.print(return2digits(tm.Hour));
+    Serial.write(':');
+    Serial.print(return2digits(tm.Minute));
+    Serial.write(':');
+    Serial.print(return2digits(tm.Second));
+    Serial.print(", Date (D/M/Y) = ");
+    Serial.print(tm.Day);
+    Serial.write('/');
+    Serial.print(tm.Month);
+    Serial.write('/');
+    Serial.print(tmYearToCalendar(tm.Year));
+    Serial.println();
+    hourNow = return2digits(tm.Hour) + ":" + return2digits(tm.Minute);
+  } else {
+    if (RTC.chipPresent()) {
+      Serial.println("The DS1307 is stopped.  Please run the SetTime");
+      Serial.println("example to initialize the time and begin running.");
+      Serial.println();
+    } else {
+      Serial.println("DS1307 read error!  Please check the circuitry.");
+      Serial.println();
+    }
+  }
+}
+
+/*0(off) à 255(on)*/
+void setRGB(uint8_t r, uint8_t g, uint8_t b){
+  analogWrite(PIN_RGB_R, 255-r);
+  analogWrite(PIN_RGB_G, 255-g);
+  analogWrite(PIN_RGB_B, 255-b);
+}
+
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
   Serial.begin(115200);
+
+  //----------------------------------------------------RGB
+  pinMode(PIN_RGB_R, OUTPUT);
+  digitalWrite(PIN_RGB_R, HIGH);
+  pinMode(PIN_RGB_G, OUTPUT);
+  digitalWrite(PIN_RGB_G, HIGH);
+  pinMode(PIN_RGB_B, OUTPUT);
+  digitalWrite(PIN_RGB_B, HIGH);
+  setRGB(255,0,0);
 
   //----------------------------------------------------ÉCRAN
   u8g2.begin();
@@ -607,6 +640,7 @@ void setup()
   timerAlarmEnable(timer);
 
   //-----------------------------------------------------GPIO
+  //boutons
   pinMode(PIN_BUT_UP, INPUT);
   attachInterrupt(PIN_BUT_UP, keypadUPInterrupt, FALLING);
   pinMode(PIN_BUT_DOWN, INPUT);
@@ -618,8 +652,9 @@ void setup()
   pinMode(PIN_BUT_SELECT, INPUT);
   attachInterrupt(PIN_BUT_SELECT, keypadSELECTInterrupt, FALLING);
 
-    // servo
-   ESP32PWM::allocateTimer(1);
+
+  //-----------------------------------------------------Servo
+  ESP32PWM::allocateTimer(1);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
   myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
   myservo.write(0); //ferme porte
@@ -631,41 +666,27 @@ void setup()
   //imprime menu principal
   menu_selected = NAVIGATION_MENU;
   printMenu(menu_selected);
+  setRGB(0,0,0);
 }
 
 
 void loop()
 {
-  /*tmElements_t tm;
-
-  if (RTC.read(tm)) {
-    Serial.print("Ok, Time = ");
-    Serial.print(return2digits(tm.Hour));
-    Serial.write(':');
-    Serial.print(return2digits(tm.Minute));
-    Serial.write(':');
-    Serial.print(return2digits(tm.Second));
-    Serial.print(", Date (D/M/Y) = ");
-    Serial.print(tm.Day);
-    Serial.write('/');
-    Serial.print(tm.Month);
-    Serial.write('/');
-    Serial.print(tmYearToCalendar(tm.Year));
+  tone(PIN_IR_TX, 50);
+  delay(400);
+  noTone(PIN_IR_TX);
+  if (IrReceiver.decode()) { //decode IR recu de la balise
+    Serial.println("Received something...");    
+    IrReceiver.printIRResultShort(&Serial); // Prints a summary of the received data
     Serial.println();
-    hourNow = return2digits(tm.Hour) + ":" + return2digits(tm.Minute);
-  } else {
-    if (RTC.chipPresent()) {
-      Serial.println("The DS1307 is stopped.  Please run the SetTime");
-      Serial.println("example to initialize the time and begin running.");
-      Serial.println();
-    } else {
-      Serial.println("DS1307 read error!  Please check the circuitry.");
-      Serial.println();
+    if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+      openDoor = true;
+      Serial.println("Tag code received!");
     }
-    delay(9000);
-
-  }
-  delay(1000);/*
+    IrReceiver.resume(); // Important, enables to receive the next IR signal
+  } 
+  delay(3000);
+  
   
   switch(menu_selected){
     case NAVIGATION_MENU :
@@ -926,14 +947,14 @@ void loop()
   }*/
 /*
   if(distance <= distsanceMin){ //Présence détecté : allume DEL IR
-    commToStart = true;
-    counterLEDUptime = 0;
+    commStarted = true;
+    counterTxUptime = 0;
     digitalWrite(PIN_ACTI, HIGH);
   }
-  if(counterLEDUptime>2 && commToStart == true){ //Fini de flasher la LED IR pour 1 sec
+  if(counterTxUptime>2 && commStarted == true){ //Fini de flasher la LED IR pour 1 sec
     digitalWrite(PIN_ACTI, LOW);
-    commToStart = false;
-    counterLEDUptime = 0;
+    commStarted = false;
+    counterTxUptime = 0;
   }*/
 
 }

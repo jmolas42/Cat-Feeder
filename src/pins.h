@@ -6,7 +6,7 @@
 //Boutons
 #define PIN_BUT_UP 42        //bouton haut
 #define PIN_BUT_DOWN 2       //bouton bas
-#define PIN_BUT_LEFT 40      //bouton gauche
+#define PIN_BUT_LEFT 41      //bouton gauche
 #define PIN_BUT_RIGHT 1      //bouton droit
 #define PIN_BUT_SELECT 3     //bouton sélection
 
@@ -16,7 +16,7 @@
 #define PIN_RESET_SCREEN 34  //reset écran
 
 //RGB
-#define PIN_RGB_R 41         //RGB rouge
+#define PIN_RGB_R 40         //RGB rouge
 #define PIN_RGB_G 38         //RGB vert
 #define PIN_RGB_B 39         //RGB bleu
 
