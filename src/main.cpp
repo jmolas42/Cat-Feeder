@@ -641,8 +641,7 @@ void setup()
   timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
   timerAlarmEnable(timer);
 
-  //-----------------------------------------------------GPIO
-  //boutons
+  //-----------------------------------------------------BOUTONS
   pinMode(PIN_BUT_UP, INPUT);
   attachInterrupt(PIN_BUT_UP, keypadUPInterrupt, FALLING);
   pinMode(PIN_BUT_DOWN, INPUT);
@@ -654,6 +653,8 @@ void setup()
   pinMode(PIN_BUT_SELECT, INPUT);
   attachInterrupt(PIN_BUT_SELECT, keypadSELECTInterrupt, FALLING);
 
+  //-----------------------------------------------------BATTERIE
+
 
   //-----------------------------------------------------Servo
   ESP32PWM::allocateTimer(1);
@@ -661,9 +662,13 @@ void setup()
   myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
   myservo.write(0); //ferme porte
 
-  //IR
+  //-----------------------------------------------------IR
   IrReceiver.begin(PIN_IR_RX); // Initializes the IR receiver object
   pinMode(PIN_IR_TX, OUTPUT);
+
+  //-----------------------------------------------------SETUP FINI
+  //lire RTC
+  readRTC();
 
   //imprime menu principal
   menu_selected = MAIN_MENU;
@@ -692,7 +697,9 @@ void loop()
   } 
   delay(3000);
   setRGB(0,0,0); //ferme rgb
-  
+
+  //Heure RTC
+  readRTC();
   
   switch(menu_selected){
     case NAVIGATION_MENU :
