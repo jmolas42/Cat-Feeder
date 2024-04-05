@@ -65,6 +65,7 @@ tmElements_t tm;
 
 //capteur de distance
 VL53L0X sensor;
+const int distanceMin = 200;
 
 //servo
 Servo myservo;
@@ -116,9 +117,9 @@ void IRAM_ATTR onTimer()  //compteur de 1 seconde
   if(timerSecond % 2 == 0){ //1 seconde
 
   }
-  if(timerSecond % 6 == 0){ //3 seconde
+  /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
-  }
+  }*/
   if(commStarted){
     counterTxUptime++;
   }
@@ -752,13 +753,29 @@ void setup()
 
   //ferme rgb
   setRGB(0,0,0);
+
+  //tone(PIN_IR_TX, 50); //TX 50hz
 }
 
 
 void loop()
 {
+  /*Serial.println("led on");
+  //tone(PIN_IR_TX, 38000);
+  //delay(500);
+  //noTone(PIN_IR_TX);
+  //Serial.println("led off");
+  while(true){
+    Serial.println(digitalRead(PIN_IR_RX));
+  }*/
 
-  /*if (commToStart){ //débute communication IR
+  if(readDistance()<distanceMin){
+    commToStart = true;
+  }
+
+
+  if (commToStart){ //débute communication IR au 3 seconde
+    setRGB(255,255,0); //jaune
     tone(PIN_IR_TX, 50); //TX 50hz
     counterTxUptime = 0;
     commToStart = false;   
@@ -769,6 +786,7 @@ void loop()
   else if(commStarted){ //communication IR en cours
     if(counterTxUptime >= 1 && IRTXup){ //après 500ms
       noTone(PIN_IR_TX); //ferme TX
+      setRGB(0,0,0); //jaune
       Serial.println("led closed");
       IRTXup = false;
     }
@@ -776,8 +794,8 @@ void loop()
       Serial.println("Received something...");    
       IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
       Serial.println();
-      if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
-        openDoor = true;
+      if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+        //openDoor = true;
         Serial.println("Tag code received!");
         setRGB(148,0,211); //flash mauve
         commStarted = false;
@@ -786,7 +804,7 @@ void loop()
       }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
     }
-  }*/
+  }
 
 
   /*Serial.println("start");
@@ -1063,14 +1081,14 @@ void loop()
   if(doorOpened){
     Serial.println("counter dooropen : " + (String)counterTimeDoorOpen);
   }
-  if(doorOpened && counterTimeDoorOpen>10 && distance >= distsanceMin){ //ferme la porte après 10 seconde si il ny a plus personne
+  if(doorOpened && counterTimeDoorOpen>10 && distance >= distanceMin){ //ferme la porte après 10 seconde si il ny a plus personne
       myservo.write(0);
       doorOpened = false;
       u8g2.clearBuffer();                    // clear the internal memory
       u8g2.drawStr(10, 20, "Door close");         // write something to the internal memory
       u8g2.sendBuffer();
   }
-  else if(doorOpened && counterTimeDoorOpen>10 && distance <= distsanceMin){ //quelqun mange toujours
+  else if(doorOpened && counterTimeDoorOpen>10 && distance <= distanceMin){ //quelqun mange toujours
     counterTimeDoorOpen = 0;
   }*/
 
@@ -1081,7 +1099,7 @@ void loop()
     measureDistance = false;
   }*/
 /*
-  if(distance <= distsanceMin){ //Présence détecté : allume DEL IR
+  if(distance <= distanceMin){ //Présence détecté : allume DEL IR
     commStarted = true;
     counterTxUptime = 0;
     digitalWrite(PIN_ACTI, HIGH);
