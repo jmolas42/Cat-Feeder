@@ -12,6 +12,9 @@
 #include <VL53L0X.h>
 #include "time.h"
 
+//flags systeme
+bool criticalError = false;
+
 //balance 
 // conversion speeds ((Continuous) Samples Per Second)
 //single:
@@ -65,7 +68,7 @@ tmElements_t tm;
 
 //capteur de distance
 VL53L0X sensor;
-const int distanceMin = 200;
+const int distanceMin = 325;
 
 //servo
 Servo myservo;
@@ -77,6 +80,8 @@ bool commStarted = false;
 bool commToStart = false;
 int counterTxUptime = 0;
 bool IRTXup = false; //état led IR (TX)
+bool commListen = false;
+int counterCommListen = 0;
 
 //Portions
 int lastFeeding = 1;
@@ -110,12 +115,14 @@ volatile bool interruptbool1 = false;
 int timerSecond =  0; //pair si timer tombe sur 1 seconde
 
 
-void IRAM_ATTR onTimer()  //compteur de 1 seconde
+void IRAM_ATTR onTimer()  //compteur de 500ms
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
 
   if(timerSecond % 2 == 0){ //1 seconde
-
+      if(commListen){
+        counterCommListen++;
+      } 
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
@@ -123,6 +130,7 @@ void IRAM_ATTR onTimer()  //compteur de 1 seconde
   if(commStarted){
     counterTxUptime++;
   }
+
   counterTimeDoorOpen++;
   timerSecond++;
 }
@@ -527,9 +535,15 @@ void readRTC(){
 
 /*0(off) à 255(on)*/
 void setRGB(uint8_t r, uint8_t g, uint8_t b){
-  analogWrite(PIN_RGB_R, 255-r);
-  analogWrite(PIN_RGB_G, 255-g);
-  analogWrite(PIN_RGB_B, 255-b);
+  r = (((float)(255-r))/255)*140 + 115; //réduis intensité
+  g = (((float)(255-g))/255)*140 + 115;
+  b = (((float)(255-b))/255)*140 + 115;
+  /*Serial.println(r);
+  Serial.println(g);
+  Serial.println(b);*/
+  analogWrite(PIN_RGB_R, r);
+  analogWrite(PIN_RGB_G, g);
+  analogWrite(PIN_RGB_B, b);
 }
 
 /*lis le capteur de distance, retourne la distance en mm*/
@@ -648,6 +662,7 @@ void setup()
     } else {
       Serial.println("DS1307 Communication Error :-{");
       Serial.println("Please check your circuitry");
+      criticalError = true;
     }
   }
 
@@ -722,15 +737,14 @@ void setup()
   //-----------------------------------------------------Servo
   ESP32PWM::allocateTimer(1);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
-  //myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
-  closeDoor();
 
   //-----------------------------------------------------Capteur de distance
-  //sensor.setTimeout(500);
+  sensor.setTimeout(500);
   //sensor.setTimeout(0);
   if (!sensor.init())
   {
     Serial.println("Failed to detect and initialize sensor!");
+    criticalError = true;
   }
   sensor.startContinuous();
 
@@ -744,6 +758,11 @@ void setup()
   pinMode(PIN_IR_TX, OUTPUT);
 
   //-----------------------------------------------------SETUP FINI
+  if(criticalError){ //Erreur critique... rien à faire...
+    setRGB(255,0,0);
+    while(true){};
+  }
+
   //lire RTC
   readRTC();
 
@@ -769,11 +788,17 @@ void loop()
     Serial.println(digitalRead(PIN_IR_RX));
   }*/
 
-  if(readDistance()<distanceMin){
-    commToStart = true;
+
+  //Lancer comm IR
+  if(!commToStart && !commStarted){
+    int dist = readDistance();
+    Serial.println(dist);///////////////////////
+    if (dist < distanceMin && dist > 50){
+      commToStart = true;
+    }
   }
 
-
+  //Comm IR
   if (commToStart){ //débute communication IR au 3 seconde
     setRGB(255,255,0); //jaune
     tone(PIN_IR_TX, 50); //TX 50hz
@@ -786,11 +811,19 @@ void loop()
   else if(commStarted){ //communication IR en cours
     if(counterTxUptime >= 1 && IRTXup){ //après 500ms
       noTone(PIN_IR_TX); //ferme TX
-      setRGB(0,0,0); //jaune
-      Serial.println("led closed");
+      setRGB(255,255,255); //blanc
+      commListen = true;
+      counterCommListen = 0;
+      Serial.println("leds closed");
       IRTXup = false;
     }
-    else if (IrReceiver.decode() && !IRTXup) { //décode IR recu de la balise
+    if(commListen && counterCommListen > 3){ //timeout 3 seconde
+      commListen = false;
+      commStarted = false;
+      setRGB(0,0,0); //ferme rgb
+      IrReceiver.resume(); // Important, enables to receive the next IR signal
+    }
+    else if (IrReceiver.decode() && !IRTXup && commListen) { //décode IR recu de la balise
       Serial.println("Received something...");    
       IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
       Serial.println();
@@ -798,7 +831,9 @@ void loop()
         //openDoor = true;
         Serial.println("Tag code received!");
         setRGB(148,0,211); //flash mauve
+        openDoor();
         commStarted = false;
+        commListen = false;
         delay(500);
         setRGB(0,0,0); //ferme rgb
       }
