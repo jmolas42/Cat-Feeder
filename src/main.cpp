@@ -603,6 +603,7 @@ bool readCapProx(){
   Serial.println(digitalRead(PIN_OUT_PROX_2));*/
   return(!(digitalRead(PIN_OUT_PROX_1) || digitalRead(PIN_OUT_PROX_2)));
   noTone(PIN_IN_PROX);
+  delay(200);
 }
 
 
@@ -749,7 +750,7 @@ void setup()
   batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
 
   //-----------------------------------------------------Servo
-  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(4);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
 
   //-----------------------------------------------------Capteur de distance
@@ -818,7 +819,7 @@ void loop()
     }
     case TX_COMM :
     {
-      if(counterTXUptime > 1){ //500ms se sont passé
+      if(counterTXUptime >= 1){ //500ms se sont passé
         setRGB(255,255,255); //blanc    
         stateComm = RX_COMM;        
         counterRXUptime = 0; 
@@ -828,9 +829,10 @@ void loop()
     }
     case RX_COMM :
     {
-      if(counterRXUptime >3){ //timeout 3 seconde
+      if(counterRXUptime >=3){ //timeout 3 seconde
         setRGB(0,0,0); //ferme RGB    
         stateComm = STANDBY;
+        IrReceiver.resume(); // Important, enables to receive the next IR signal
       }
       if(IrReceiver.decode()) { //décode IR recu de la balise
         Serial.println("Received something...");    
@@ -847,23 +849,27 @@ void loop()
         }
         IrReceiver.resume(); // Important, enables to receive the next IR signal
       }
-    }
       break;
+    }
+
 
     case CAT_EATING :
     {
-      if(readCapProx()){ //chat encore la
+      bool prox = readCapProx();
+      if(prox){ //chat encore la
         counterDoorOpenCatLeft = 0;
         setRGB(100,100,0);
       }
-      if(counterDoorOpenCatLeft>3){ //chat parti depuis 3 seconde
+      Serial.println(prox);
+      if(counterDoorOpenCatLeft>=5){ //chat parti depuis 5 seconde
         closeDoor();
         setRGB(0,0,0);
         doorOpenedByCat = false;
         stateComm = STANDBY;
       }
-    }
       break;
+    }
+
 
     default :
     {
@@ -871,6 +877,8 @@ void loop()
     }
     }
   }
+
+
 /*
   //Lancer comm IR
   if(!commToStart && !commStarted && !doorOpened && !doorOpenedByCat){
