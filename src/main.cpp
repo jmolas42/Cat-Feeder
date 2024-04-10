@@ -70,10 +70,11 @@ tmElements_t tm;
 VL53L0X sensor;
 const int distanceMin = 325;
 
-//servo
+//servo-porte
 Servo myservo;
 bool doorOpened = false; //flag si porte ouverte
-int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
+bool doorOpenedByCat = false; //flag si porte ouverte par chat
+int counterDoorOpenCatLeft = 0; //compte le nb de seconde depuis que le chat est parti
 
 //Communication IR
 bool commStarted = false;
@@ -122,7 +123,10 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
   if(timerSecond % 2 == 0){ //1 seconde
       if(commListen){
         counterCommListen++;
-      } 
+      }
+      if(doorOpenedByCat){
+        counterDoorOpenCatLeft++;
+      }
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
@@ -130,8 +134,6 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
   if(commStarted){
     counterTxUptime++;
   }
-
-  counterTimeDoorOpen++;
   timerSecond++;
 }
 
@@ -538,9 +540,9 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
   r = (((float)(255-r))/255)*140 + 115; //réduis intensité
   g = (((float)(255-g))/255)*140 + 115;
   b = (((float)(255-b))/255)*140 + 115;
-  /*Serial.println(r);
+  Serial.println(r);
   Serial.println(g);
-  Serial.println(b);*/
+  Serial.println(b);
   analogWrite(PIN_RGB_R, r);
   analogWrite(PIN_RGB_G, g);
   analogWrite(PIN_RGB_B, b);
@@ -579,6 +581,7 @@ void openDoor(){
   }
 }
 
+
 void closeDoor(){
   if(doorOpened){
   myservo.attach(PIN_SERVO);
@@ -591,6 +594,18 @@ void closeDoor(){
   doorOpened = false;
   }
 }
+
+/*retourne vrai si objet à proximité detécté*/
+bool readCapProx(){
+  tone(PIN_IN_PROX, 38000);
+  delay(200);
+  /*Serial.print(digitalRead(PIN_OUT_PROX_1));
+  Serial.print(",");
+  Serial.println(digitalRead(PIN_OUT_PROX_2));*/
+  return(!(digitalRead(PIN_OUT_PROX_1) || digitalRead(PIN_OUT_PROX_2)));
+  noTone(PIN_IN_PROX);
+}
+
 
 void setup()
 {
@@ -743,10 +758,19 @@ void setup()
   //sensor.setTimeout(0);
   if (!sensor.init())
   {
-    Serial.println("Failed to detect and initialize sensor!");
+    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
+      if (!sensor.init())
+    {
+    Serial.println("Failed to detect and initialize sensor! OOPS");
     criticalError = true;
+    }
   }
   sensor.startContinuous();
+
+  //-----------------------------------------------------Capteur de proximité
+  pinMode(PIN_OUT_PROX_1, INPUT);
+  pinMode(PIN_OUT_PROX_2, INPUT);
+  pinMode(PIN_IN_PROX, OUTPUT);
 
   //-----------------------------------------------------Distribution
   pinMode(PIN_MOTOR_DIST, OUTPUT);
@@ -773,26 +797,15 @@ void setup()
   //ferme rgb
   setRGB(0,0,0);
 
-  //tone(PIN_IR_TX, 50); //TX 50hz
 }
 
 
 void loop()
 {
-  /*Serial.println("led on");
-  //tone(PIN_IR_TX, 38000);
-  //delay(500);
-  //noTone(PIN_IR_TX);
-  //Serial.println("led off");
-  while(true){
-    Serial.println(digitalRead(PIN_IR_RX));
-  }*/
-
-
   //Lancer comm IR
-  if(!commToStart && !commStarted){
+  if(!commToStart && !commStarted && !doorOpened && !doorOpenedByCat){
     int dist = readDistance();
-    Serial.println(dist);///////////////////////
+    //Serial.println(dist);
     if (dist < distanceMin && dist > 50){
       commToStart = true;
     }
@@ -800,13 +813,13 @@ void loop()
 
   //Comm IR
   if (commToStart){ //débute communication IR au 3 seconde
+    Serial.println("comm started");
     setRGB(255,255,0); //jaune
-    tone(PIN_IR_TX, 50); //TX 50hz
+    tone(PIN_IR_TX, 49); //TX 50hz
     counterTxUptime = 0;
     commToStart = false;   
     commStarted = true;
     IRTXup = true;
-    Serial.println("comm started");
   }
   else if(commStarted){ //communication IR en cours
     if(counterTxUptime >= 1 && IRTXup){ //après 500ms
@@ -832,14 +845,27 @@ void loop()
         Serial.println("Tag code received!");
         setRGB(148,0,211); //flash mauve
         openDoor();
+        doorOpenedByCat = true;
+        counterDoorOpenCatLeft = 0;
         commStarted = false;
         commListen = false;
-        delay(500);
         setRGB(0,0,0); //ferme rgb
       }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
     }
   }
+
+  /*if(doorOpenedByCat){ //ferme porte si chat parti
+    if(readCapProx()){ //chat encore la
+      counterDoorOpenCatLeft = 0;
+      setRGB(100,100,0);
+    }
+    if(counterDoorOpenCatLeft>3){ //chat parti depuis 3 seconde
+      closeDoor();
+      setRGB(0,0,0);
+      doorOpenedByCat = false;
+    }
+  }*/
 
 
   /*Serial.println("start");
