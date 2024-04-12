@@ -769,7 +769,7 @@ void loop()
     Serial.println(digitalRead(PIN_IR_RX));
   }*/
 
-  if(readDistance()<distanceMin){
+  /*if(readDistance()<distanceMin){
     commToStart = true;
   }
 
@@ -804,7 +804,7 @@ void loop()
       }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
     }
-  }
+  }*/
 
 
   /*Serial.println("start");
