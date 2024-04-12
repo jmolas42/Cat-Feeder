@@ -12,6 +12,9 @@
 #include <VL53L0X.h>
 #include "time.h"
 
+//flags systeme
+bool criticalError = false;
+
 //balance 
 // conversion speeds ((Continuous) Samples Per Second)
 //single:
@@ -65,18 +68,20 @@ tmElements_t tm;
 
 //capteur de distance
 VL53L0X sensor;
-const int distanceMin = 200;
+const int distanceMin = 325;
 
-//servo
+//servo-porte
 Servo myservo;
 bool doorOpened = false; //flag si porte ouverte
-int counterTimeDoorOpen = 0; //nb de seconde porte ouverte
+bool doorOpenedByCat = false; //flag si porte ouverte par chat
+bool doorOpenedByManually = false; //flag si porte ouverte manuellement
+int counterDoorOpenCatLeft = 0; //compte le nb de seconde depuis que le chat est parti
 
 //Communication IR
-bool commStarted = false;
-bool commToStart = false;
-int counterTxUptime = 0;
-bool IRTXup = false; //état led IR (TX)
+enum StatesComm  {STANDBY, TX_COMM, RX_COMM, CAT_EATING};
+StatesComm stateComm = STANDBY;
+int counterTXUptime = 0;
+int counterRXUptime = 0;
 
 //Portions
 int lastFeeding = 1;
@@ -110,20 +115,24 @@ volatile bool interruptbool1 = false;
 int timerSecond =  0; //pair si timer tombe sur 1 seconde
 
 
-void IRAM_ATTR onTimer()  //compteur de 1 seconde
+void IRAM_ATTR onTimer()  //compteur de 500ms
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
 
   if(timerSecond % 2 == 0){ //1 seconde
-
+      if(stateComm == RX_COMM){
+        counterRXUptime++;
+      }
+      if(doorOpenedByCat){
+        counterDoorOpenCatLeft++;
+      }
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
   }*/
-  if(commStarted){
-    counterTxUptime++;
+  if(stateComm == TX_COMM){
+    counterTXUptime++;
   }
-  counterTimeDoorOpen++;
   timerSecond++;
 }
 
@@ -527,9 +536,15 @@ void readRTC(){
 
 /*0(off) à 255(on)*/
 void setRGB(uint8_t r, uint8_t g, uint8_t b){
-  analogWrite(PIN_RGB_R, 255-r);
-  analogWrite(PIN_RGB_G, 255-g);
-  analogWrite(PIN_RGB_B, 255-b);
+  r = (((float)(255-r))/255)*140 + 115; //réduis intensité
+  g = (((float)(255-g))/255)*140 + 115;
+  b = (((float)(255-b))/255)*140 + 115;
+  /*Serial.println(r);
+  Serial.println(g);
+  Serial.println(b);*/
+  analogWrite(PIN_RGB_R, r);
+  analogWrite(PIN_RGB_G, g);
+  analogWrite(PIN_RGB_B, b);
 }
 
 /*lis le capteur de distance, retourne la distance en mm*/
@@ -565,6 +580,7 @@ void openDoor(){
   }
 }
 
+
 void closeDoor(){
   if(doorOpened){
   myservo.attach(PIN_SERVO);
@@ -577,6 +593,19 @@ void closeDoor(){
   doorOpened = false;
   }
 }
+
+/*retourne vrai si objet à proximité detécté*/
+bool readCapProx(){
+  tone(PIN_IN_PROX, 38000);
+  delay(200);
+  /*Serial.print(digitalRead(PIN_OUT_PROX_1));
+  Serial.print(",");
+  Serial.println(digitalRead(PIN_OUT_PROX_2));*/
+  return(!(digitalRead(PIN_OUT_PROX_1) || digitalRead(PIN_OUT_PROX_2)));
+  noTone(PIN_IN_PROX);
+  delay(200);
+}
+
 
 void setup()
 {
@@ -648,6 +677,7 @@ void setup()
     } else {
       Serial.println("DS1307 Communication Error :-{");
       Serial.println("Please check your circuitry");
+      criticalError = true;
     }
   }
 
@@ -720,19 +750,27 @@ void setup()
   batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
 
   //-----------------------------------------------------Servo
-  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(4);
   myservo.setPeriodHertz(50);      // standard 50 hz servo
-  //myservo.attach(PIN_SERVO, 1000, 2000); // attaches the servo on pin 18 to the servo object
-  closeDoor();
 
   //-----------------------------------------------------Capteur de distance
-  //sensor.setTimeout(500);
+  sensor.setTimeout(500);
   //sensor.setTimeout(0);
   if (!sensor.init())
   {
-    Serial.println("Failed to detect and initialize sensor!");
+    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
+      if (!sensor.init())
+    {
+    Serial.println("Failed to detect and initialize sensor! OOPS");
+    criticalError = true;
+    }
   }
   sensor.startContinuous();
+
+  //-----------------------------------------------------Capteur de proximité
+  pinMode(PIN_OUT_PROX_1, INPUT);
+  pinMode(PIN_OUT_PROX_2, INPUT);
+  pinMode(PIN_IN_PROX, OUTPUT);
 
   //-----------------------------------------------------Distribution
   pinMode(PIN_MOTOR_DIST, OUTPUT);
@@ -744,6 +782,11 @@ void setup()
   pinMode(PIN_IR_TX, OUTPUT);
 
   //-----------------------------------------------------SETUP FINI
+  if(criticalError){ //Erreur critique... rien à faire...
+    setRGB(255,0,0);
+    while(true){};
+  }
+
   //lire RTC
   readRTC();
 
@@ -754,43 +797,124 @@ void setup()
   //ferme rgb
   setRGB(0,0,0);
 
-  //tone(PIN_IR_TX, 50); //TX 50hz
 }
 
 
 void loop()
 {
-  /*Serial.println("led on");
-  //tone(PIN_IR_TX, 38000);
-  //delay(500);
-  //noTone(PIN_IR_TX);
-  //Serial.println("led off");
-  while(true){
-    Serial.println(digitalRead(PIN_IR_RX));
+
+  //Comm IR
+  if(!doorOpened || stateComm == CAT_EATING){
+    switch (stateComm){
+    case STANDBY :
+    {
+      int dist = readDistance();
+      if (dist < distanceMin && dist > 50){ //présence détecté
+        setRGB(255,255,0); //jaune     
+        stateComm = TX_COMM;        
+        counterTXUptime = 0; 
+        tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
+      }
+      break;
+    }
+    case TX_COMM :
+    {
+      if(counterTXUptime >= 1){ //500ms se sont passé
+        setRGB(255,255,255); //blanc    
+        stateComm = RX_COMM;        
+        counterRXUptime = 0; 
+        noTone(PIN_IR_TX); //ferme DEL IR
+      }
+      break;
+    }
+    case RX_COMM :
+    {
+      if(counterRXUptime >=3){ //timeout 3 seconde
+        setRGB(0,0,0); //ferme RGB    
+        stateComm = STANDBY;
+        IrReceiver.resume(); // Important, enables to receive the next IR signal
+      }
+      if(IrReceiver.decode()) { //décode IR recu de la balise
+        Serial.println("Received something...");    
+        IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
+        Serial.println();
+        if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+          Serial.println("Tag code received!");
+          setRGB(148,0,211); //flash mauve
+          openDoor();
+          doorOpenedByCat = true;
+          counterDoorOpenCatLeft = 0;
+          stateComm = CAT_EATING;
+          setRGB(0,0,0); //ferme rgb
+        }
+        IrReceiver.resume(); // Important, enables to receive the next IR signal
+      }
+      break;
+    }
+
+
+    case CAT_EATING :
+    {
+      bool prox = readCapProx();
+      if(prox){ //chat encore la
+        counterDoorOpenCatLeft = 0;
+        setRGB(100,100,0);
+      }
+      Serial.println(prox);
+      if(counterDoorOpenCatLeft>=5){ //chat parti depuis 5 seconde
+        closeDoor();
+        setRGB(0,0,0);
+        doorOpenedByCat = false;
+        stateComm = STANDBY;
+      }
+      break;
+    }
+
+
+    default :
+    {
+      break;
+    }
+    }
+  }
+
+
+/*
+  //Lancer comm IR
+  if(!commToStart && !commStarted && !doorOpened && !doorOpenedByCat){
+    //int dist = readDistance();
+    //Serial.println(dist);
+    if (dist < distanceMin && dist > 50){
+      commToStart = true;
+    }
   }*/
 
-  /*if(readDistance()<distanceMin){
-    commToStart = true;
-  }
-
-
-  if (commToStart){ //débute communication IR au 3 seconde
-    setRGB(255,255,0); //jaune
-    tone(PIN_IR_TX, 50); //TX 50hz
-    counterTxUptime = 0;
-    commToStart = false;   
-    commStarted = true;
-    IRTXup = true;
+  //Comm IR
+  /*if (commToStart){ //débute communication IR au 3 seconde
     Serial.println("comm started");
+    setRGB(255,255,0); //jaune
+    tone(PIN_IR_TX, 49); //TX 50hz
+    counterTXUptime = 0;
+    commToStart = false;   
+    TXCommStarted = true;
+    IRTXup = true;
   }
-  else if(commStarted){ //communication IR en cours
-    if(counterTxUptime >= 1 && IRTXup){ //après 500ms
+  else if(TXCommStarted){ //communication IR en cours
+    if(counterTXUptime >= 1 && IRTXup){ //après 500ms
       noTone(PIN_IR_TX); //ferme TX
-      setRGB(0,0,0); //jaune
-      Serial.println("led closed");
+      setRGB(255,255,255); //blanc
+      commListen = true;
+      counterRXUptime = 0;
+      Serial.println("leds closed");
       IRTXup = false;
     }
-    else if (IrReceiver.decode() && !IRTXup) { //décode IR recu de la balise
+    if(commListen && counterRXUptime > 3){ //timeout 3 seconde
+      commListen = false;
+      TXCommStarted = false;
+      setRGB(0,0,0); //ferme rgb
+      IrReceiver.resume(); // Important, enables to receive the next IR signal
+    }
+    else if (IrReceiver.decode() && !IRTXup && commListen) { //décode IR recu de la balise
       Serial.println("Received something...");    
       IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
       Serial.println();
@@ -798,38 +922,28 @@ void loop()
         //openDoor = true;
         Serial.println("Tag code received!");
         setRGB(148,0,211); //flash mauve
-        commStarted = false;
-        delay(500);
-        setRGB(0,0,0); //ferme rgb
-      }
-    IrReceiver.resume(); // Important, enables to receive the next IR signal
-    }
-  }*/
-
-
-  /*Serial.println("start");
-  tone(PIN_IR_TX, 50);
-  delay(400);
-  noTone(PIN_IR_TX);
-  delay(100);
-  Serial.println("listen");
-  for(int i =0; i<50000000; i++){
-    if(IrReceiver.decode()) { //décode IR recu de la balise
-      Serial.println("Received something...");    
-      IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
-      Serial.println();
-      if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
-        openDoor = true;
-        Serial.println("Tag code received!");
-        setRGB(148,0,211); //flash mauve
-        commStarted = false;
-        delay(500);
+        openDoor();
+        doorOpenedByCat = true;
+        counterDoorOpenCatLeft = 0;
+        TXCommStarted = false;
+        commListen = false;
         setRGB(0,0,0); //ferme rgb
       }
     IrReceiver.resume(); // Important, enables to receive the next IR signal
     }
   }
-  delay(1000);*/
+
+  if(doorOpenedByCat){ //ferme porte si chat parti
+    if(readCapProx()){ //chat encore la
+      counterDoorOpenCatLeft = 0;
+      setRGB(100,100,0);
+    }
+    if(counterDoorOpenCatLeft>3){ //chat parti depuis 3 seconde
+      closeDoor();
+      setRGB(0,0,0);
+      doorOpenedByCat = false;
+    }
+  }*/
 
   //Heure RTC
   readRTC();
@@ -1027,11 +1141,13 @@ void loop()
       if(keypad_select){
         if(Item_selected_row == 1 && Item_selected_column == 1){ //ouvrir porte
           openDoor();
-          Serial.println("door opened");
+          doorOpenedByManually = true;
+          Serial.println("door opened manually");
         }
         if(Item_selected_row == 1 && Item_selected_column == 2){ //fermer porte
           closeDoor();
-          Serial.println("door closed");
+          doorOpenedByManually = false;
+          Serial.println("door closed manually");
         }
         if(Item_selected_row == 2){ //délivrer portion
           distribute();
