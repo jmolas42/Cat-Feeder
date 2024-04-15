@@ -810,6 +810,9 @@ void loop()
     {
       int dist = readDistance();
       if (dist < distanceMin && dist > 50){ //présence détecté
+        Serial.print("object detected at : ");
+        Serial.print(dist);
+        Serial.println("mm");
         setRGB(255,255,0); //jaune     
         stateComm = TX_COMM;        
         counterTXUptime = 0; 
@@ -829,23 +832,28 @@ void loop()
     }
     case RX_COMM :
     {
-      if(counterRXUptime >=3){ //timeout 3 seconde
+      if(counterRXUptime >=1){ //timeout 1 seconde
         setRGB(0,0,0); //ferme RGB    
         stateComm = STANDBY;
         IrReceiver.resume(); // Important, enables to receive the next IR signal
       }
       if(IrReceiver.decode()) { //décode IR recu de la balise
-        Serial.println("Received something...");    
-        IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
-        Serial.println();
+        Serial.println("Received something...");
         if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+          IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
+          batTag = IrReceiver.decodedIRData.command;
           Serial.println("Tag code received!");
+          Serial.print("Battery level Tag : ");
+          Serial.println(batTag);
           setRGB(148,0,211); //flash mauve
           openDoor();
           doorOpenedByCat = true;
           counterDoorOpenCatLeft = 0;
           stateComm = CAT_EATING;
           setRGB(0,0,0); //ferme rgb
+        }
+        else{
+          Serial.println("It's just noise!");
         }
         IrReceiver.resume(); // Important, enables to receive the next IR signal
       }
