@@ -869,7 +869,7 @@ void loop()
         setRGB(100,100,0);
       }
       Serial.println(prox);
-      if(counterDoorOpenCatLeft>=5){ //chat parti depuis 5 seconde
+      if(counterDoorOpenCatLeft>=3){ //chat parti depuis 3 seconde
         closeDoor();
         setRGB(0,0,0);
         doorOpenedByCat = false;
