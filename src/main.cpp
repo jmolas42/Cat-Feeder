@@ -9,10 +9,14 @@
 #include <DS1337RTC.h>
 #include <Time.h>
 #include <Wire.h>
-//#include <VL53L0X.h>
+#include <Preferences.h>
+#include <VL53L0X.h>
 
 //flags systeme
 bool criticalError = false;
+
+//flash
+Preferences prefs;
 
 //balance 
 // conversion speeds ((Continuous) Samples Per Second)
@@ -66,7 +70,7 @@ bool alarmRTC = false;
 bool updateTimeFlag = false;
 
 //capteur de distance
-//VL53L0X sensor;
+VL53L0X sensor;
 const int distanceMin = 325;
 
 //servo-porte
@@ -544,7 +548,7 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
 }
 
 /*lis le capteur de distance, retourne la distance en mm*/
-/*int readDistance(){
+int readDistance(){
   if (sensor.timeoutOccurred()) { 
     Serial.print(" TIMEOUT"); 
     if (!sensor.init()) //realive
@@ -554,7 +558,7 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
     sensor.startContinuous();
   }
   return sensor.readRangeContinuousMillimeters();
-}*/
+}
 
 /*tourne une fois le distributeur*/
 void distribute(){
@@ -623,6 +627,8 @@ void setup()
   u8g2.clearBuffer();
   u8g2.drawXBMP(76,0,103,64,logo);
   u8g2.sendBuffer();
+
+  //----------------------------------------------------FLASH
 
   //----------------------------------------------------Wi-Fi
   Serial.print("Connecting to ");
@@ -776,7 +782,7 @@ void setup()
   myservo.setPeriodHertz(50);      // standard 50 hz servo
 
   //-----------------------------------------------------Capteur de distance
-  /*sensor.setTimeout(500);
+  sensor.setTimeout(500);
   //sensor.setTimeout(0);
   if (!sensor.init())
   {
@@ -787,7 +793,7 @@ void setup()
     criticalError = true;
     }
   }
-  sensor.startContinuous();*/
+  sensor.startContinuous();
 
   //-----------------------------------------------------Capteur de proximité
   pinMode(PIN_OUT_PROX_1, INPUT);
@@ -830,8 +836,7 @@ void loop()
     switch (stateComm){
     case STANDBY :
     {
-      //int dist = readDistance();
-      int dist = 500;
+      int dist = readDistance();
       if (dist < distanceMin && dist > 50){ //présence détecté
         Serial.print("object detected at : ");
         Serial.print(dist);
