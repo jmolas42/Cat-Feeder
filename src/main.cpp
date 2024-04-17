@@ -87,6 +87,7 @@ enum StatesComm  {STANDBY, TX_COMM, RX_COMM, CAT_EATING};
 StatesComm stateComm = STANDBY;
 int counterTXUptime = 0;
 int counterRXUptime = 0;
+int tagID = 0x12;
 
 //Portions
 int lastFeeding = 1;
@@ -102,7 +103,7 @@ uint8_t batDis = 0; //batterie distributeur 0 à 255
 
 //Interface utilisateur
 U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
-enum Menus  {NAVIGATION_MENU, MAIN_MENU, PORTIONS_MENU, HOUR_MENU, ACTIONS_MENU};
+enum Menus  {SCREEN_OFF, NAVIGATION_MENU, MAIN_MENU, PORTIONS_MENU, HOUR_MENU, ACTIONS_MENU};
 Menus menu_selected = MAIN_MENU;
 int Item_selected_row = 1;
 int Item_selected_column = 1;
@@ -115,6 +116,8 @@ bool keypad_select = false;
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 200;    // the debounce time; increase if the output flickers
 int lastMinutes; //dernière minutes pour savoir si on rafraichi l'heure
+int timerScreenNoActivity = 0;
+bool screenON = false;
 
 // Timer
 hw_timer_t *timer = NULL;
@@ -134,6 +137,9 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
         counterDoorOpenCatLeft++;
       }
       updateTimeFlag = true;
+      if(screenON){
+        timerScreenNoActivity++;
+      }
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
@@ -148,6 +154,7 @@ void keypadUPInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_up = true;
     lastDebounceTime = millis();
+    timerScreenNoActivity = 0;
   }
 }
 
@@ -155,6 +162,7 @@ void keypadDOWNInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_down = true;
     lastDebounceTime = millis();
+    timerScreenNoActivity = 0;
   }
 }
 
@@ -162,6 +170,7 @@ void keypadLEFTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_left = true;
     lastDebounceTime = millis();
+    timerScreenNoActivity = 0;
   }
 }
 
@@ -169,6 +178,7 @@ void keypadRIGHTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == NAVIGATION_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_right = true;
     lastDebounceTime = millis();
+    timerScreenNoActivity = 0;
   }
 }
 
@@ -176,6 +186,7 @@ void keypadSELECTInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay){
     keypad_select = true;
     lastDebounceTime = millis();
+    timerScreenNoActivity = 0;
   }
 }
 
@@ -716,6 +727,10 @@ void setup()
   Serial.println("timeFeeding2 : " + timeFeeding2);
   nbFeeding2 = prefs.getInt("nbFeeding2", 0);
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
+  batTag = prefs.getInt("batTag", 0);
+  Serial.println("batTag : " + (String)batTag);
+  tagID = prefs.getInt("tagID", 0x12);
+  Serial.println("tagID : " + (String)tagID);
 
   //----------------------------------------------------Wi-Fi
   Serial.print("Connecting to ");
@@ -909,6 +924,7 @@ void setup()
   //imprime menu principal
   menu_selected = MAIN_MENU;
   printMenu(menu_selected);
+  screenON = true;
 
   //ferme rgb
   setRGB(0,0,0);
@@ -955,9 +971,10 @@ void loop()
       }
       if(IrReceiver.decode()) { //décode IR recu de la balise
         Serial.println("Received something...");
-        if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
+        if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address == tagID){ //check le protocole et adresse envoyé
           IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
           batTag = IrReceiver.decodedIRData.command;
+          prefs.putInt("batTag", batTag);
           Serial.println("Tag code received!");
           Serial.print("Battery level Tag : ");
           Serial.println(batTag);
@@ -1015,8 +1032,24 @@ void loop()
   }
 
 
-  
+  if(timerScreenNoActivity >30){
+    Serial.println("Screen turned off");
+    u8g2.sleepOn();
+    screenON = false;
+    menu_selected = SCREEN_OFF;
+  }
+
   switch(menu_selected){
+    case SCREEN_OFF :
+      if(keypad_select){
+        Serial.println("Screen turned on");
+        u8g2.sleepOff();
+        screenON = true;
+        menu_selected = MAIN_MENU;
+        printMenu(menu_selected);
+        keypad_select = false;
+      }
+      break;
     case NAVIGATION_MENU :
       if(keypad_right){
         if(Item_selected_column >=1 && Item_selected_column<=3){
