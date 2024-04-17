@@ -72,6 +72,8 @@ bool updateTimeFlag = false;
 //capteur de distance
 VL53L0X sensor;
 const int distanceMin = 325;
+int distances[3] = {0,0,0};
+uint8_t distancesIndex = 0;
 
 //servo-porte
 Servo myservo;
@@ -549,15 +551,35 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
 
 /*lis le capteur de distance, retourne la distance en mm*/
 int readDistance(){
-  if (sensor.timeoutOccurred()) { 
-    Serial.print(" TIMEOUT"); 
-    if (!sensor.init()) //realive
-    {
-      Serial.println("Failed to detect and initialize sensor!");
+  int dist = sensor.readRangeContinuousMillimeters();
+  bool ok = false;
+  distances[distancesIndex] = dist;
+  if(dist>50 && dist<325){
+    int moyenne = (float)(distances[0]+distances[1]+distances[2]) / 3;
+    if(dist < moyenne + 20 && dist > moyenne - 20){ //si les 3 derniere distance sont pas trop éloigné
+      Serial.print("ALLOWED ");
+      ok = true;
+      Serial.println(dist);
     }
-    sensor.startContinuous();
+    else{
+      Serial.print("NOT ALLOWED ");
+      Serial.println(dist);
+    }
   }
-  return sensor.readRangeContinuousMillimeters();
+
+  if (sensor.timeoutOccurred()) { Serial.print(" TIMEOUT"); }
+  if(distancesIndex<2){
+    distancesIndex++;
+  }
+  else{
+    distancesIndex = 0;
+  }
+  if(ok){
+    return dist;
+  }
+  else{
+    return 0;
+  }
 }
 
 /*tourne une fois le distributeur*/
@@ -679,9 +701,6 @@ void setup()
   tm.Second = 0;
   tm.Minute = timeFeeding1.substring(3,5).toInt();
   tm.Hour = timeFeeding1.substring(0,2).toInt();
-  Serial.print("hour : ");
-  Serial.println(timeFeeding1.substring(0,2).toInt());
-  Serial.println();
   RTC.set(makeTime(tm), ALARM1_ADDRESS);
   tm.Minute = timeFeeding2.substring(3,5).toInt();
   tm.Hour = timeFeeding2.substring(0,2).toInt();
