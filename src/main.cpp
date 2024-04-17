@@ -51,6 +51,8 @@ Preferences prefs;
 #define MAX_WRITE       0x00
 #define MAX_UNIPOLAR    0x40        // input range: defaults to bipolar (-AREF to +AREF). UNI = (0 to +AREF)
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
+int weight = 0;
+int const calibration = 1000;//???
 
 //WiFi
 bool wifiConnected = false;
@@ -118,12 +120,26 @@ long debounceDelay = 200;    // the debounce time; increase if the output flicke
 int lastMinutes; //dernière minutes pour savoir si on rafraichi l'heure
 int timerScreenNoActivity = 0;
 bool screenON = false;
+int powerLEDTimer = 0;
+bool powerLEDON = true;
 
 // Timer
 hw_timer_t *timer = NULL;
 volatile bool interruptbool1 = false;
 int timerSecond =  0; //pair si timer tombe sur 1 seconde
 
+/*0(off) à 255(on)*/
+void setRGB(uint8_t r, uint8_t g, uint8_t b){
+  r = (((float)(255-r))/255)*140 + 115; //réduis intensité
+  g = (((float)(255-g))/255)*140 + 115;
+  b = (((float)(255-b))/255)*140 + 115;
+  /*Serial.println(r);
+  Serial.println(g);
+  Serial.println(b);*/
+  analogWrite(PIN_RGB_R, r);
+  analogWrite(PIN_RGB_G, g);
+  analogWrite(PIN_RGB_B, b);
+}
 
 void IRAM_ATTR onTimer()  //compteur de 500ms
 {
@@ -139,6 +155,12 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
       updateTimeFlag = true;
       if(screenON){
         timerScreenNoActivity++;
+      }
+      if(powerLEDON){ //ferme led après 5 sec
+        powerLEDTimer ++ ;
+        if(powerLEDTimer == 5){
+          setRGB(0,0,0);
+        }
       }
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
@@ -577,19 +599,6 @@ void updateTime(){
   hourNow = return2digits(clockSet.Hour) + ":" + return2digits(clockSet.Minute);
 }
 
-/*0(off) à 255(on)*/
-void setRGB(uint8_t r, uint8_t g, uint8_t b){
-  r = (((float)(255-r))/255)*140 + 115; //réduis intensité
-  g = (((float)(255-g))/255)*140 + 115;
-  b = (((float)(255-b))/255)*140 + 115;
-  /*Serial.println(r);
-  Serial.println(g);
-  Serial.println(b);*/
-  analogWrite(PIN_RGB_R, r);
-  analogWrite(PIN_RGB_G, g);
-  analogWrite(PIN_RGB_B, b);
-}
-
 /*lis le capteur de distance, retourne la distance en mm*/
 int readDistance(){
   int dist = sensor.readRangeContinuousMillimeters();
@@ -697,6 +706,13 @@ void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
   Serial.begin(115200);
+  
+  //----------------------------------------------------Timer
+  timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
+  timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
+  unsigned int timerFactor = 500000;           //500ms
+  timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
+  timerAlarmEnable(timer);
 
   //----------------------------------------------------RGB
   pinMode(PIN_RGB_R, OUTPUT);
@@ -706,6 +722,7 @@ void setup()
   pinMode(PIN_RGB_B, OUTPUT);
   digitalWrite(PIN_RGB_B, HIGH);
   setRGB(0,255,0); //vert
+  powerLEDTimer = 0;
 
   //----------------------------------------------------ÉCRAN
   u8g2.begin();
@@ -751,6 +768,9 @@ void setup()
     Serial.println("WiFi connected.");
     wifiConnected = true;
     Serial.println(WiFi.localIP());
+  }
+  else{
+    Serial.println("Unable to connect to WiFi");
   }
 
   //----------------------------------------------------Time & RTC
@@ -857,12 +877,6 @@ void setup()
   Serial.println("val : " + (String)val);
   digitalWrite(PIN_CS_ADC_SCALE, HIGH);           // set the SS pin HIGH
 
-  //----------------------------------------------------Timer
-  timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
-  timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
-  unsigned int timerFactor = 500000;           //500ms
-  timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
-  timerAlarmEnable(timer);
 
   //-----------------------------------------------------BOUTONS
   pinMode(PIN_BUT_UP, INPUT);
@@ -935,9 +949,6 @@ void setup()
   printMenu(menu_selected);
   screenON = true;
 
-  //ferme rgb
-  setRGB(0,0,0);
-
 }
 
 
@@ -954,7 +965,7 @@ void loop()
         Serial.print("object detected at : ");
         Serial.print(dist);
         Serial.println("mm");
-        setRGB(255,255,0); //jaune     
+        setRGB(255,255,255); //blanc    
         stateComm = TX_COMM;        
         counterTXUptime = 0; 
         tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
@@ -964,7 +975,6 @@ void loop()
     case TX_COMM :
     {
       if(counterTXUptime >= 1){ //500ms se sont passé
-        setRGB(255,255,255); //blanc    
         stateComm = RX_COMM;        
         counterRXUptime = 0; 
         noTone(PIN_IR_TX); //ferme DEL IR
@@ -987,12 +997,11 @@ void loop()
           Serial.println("Tag code received!");
           Serial.print("Battery level Tag : ");
           Serial.println(batTag);
-          setRGB(148,0,211); //flash mauve
+          setRGB(148,0,211); // mauve
           openDoor();
           doorOpenedByCat = true;
           counterDoorOpenCatLeft = 0;
           stateComm = CAT_EATING;
-          setRGB(0,0,0); //ferme rgb
         }
         else{
           Serial.println("It's just noise!");
@@ -1297,11 +1306,13 @@ void loop()
         if(Item_selected_row == 1 && Item_selected_column == 1){ //ouvrir porte
           openDoor();
           doorOpenedByManually = true;
+          setRGB(0,0,255);
           Serial.println("door opened manually");
         }
         if(Item_selected_row == 1 && Item_selected_column == 2){ //fermer porte
           closeDoor();
           doorOpenedByManually = false;
+          setRGB(0,0,0);
           Serial.println("door closed manually");
         }
         if(Item_selected_row == 2){ //délivrer portion
