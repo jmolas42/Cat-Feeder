@@ -54,8 +54,8 @@ Preferences prefs;
 
 //WiFi
 bool wifiConnected = false;
-const char* ssid     = "Test";
-const char* password = "test1234";
+String ssid     = "Test";
+String password = "test1234";
 
 //Time & RTC
 String hourNow = "00:00";
@@ -92,7 +92,9 @@ int counterRXUptime = 0;
 int lastFeeding = 1;
 int feedingPortions [2] = {0,0};
 String timeFeeding1 = "08:00";
+int nbFeeding1 = 0;
 String timeFeeding2 = "17:00";
+int nbFeeding2 = 0;
 
 //Batteries
 uint8_t batTag = 0; //batterie balise 0 à 255
@@ -280,8 +282,20 @@ void printMenu(Menus ms){
       u8g2.drawButtonUTF8(90,17, U8G2_BTN_BW1, 0, 0, 0, "2");
       u8g2.drawStr(0, 50, "Heure:");
       u8g2.drawStr(60,50, timeFeeding1.c_str());
+      u8g2.drawStr(120, 50, "Nb:");
+      u8g2.drawStr(155, 50, ((String)nbFeeding1).c_str());
       u8g2.drawXBMP(237,47,17,17,return_icon);
       u8g2.drawFrame(236,46,20,18); 
+      break;
+
+    case HOUR_MENU:
+      u8g2.setFont(u8g2_font_helvR14_tr);
+      u8g2.drawStr(0, 17, "Fuseau horaire:");
+      u8g2.drawStr(137, 17, "-5");
+      u8g2.drawStr(0, 50, "Heure:");
+      u8g2.drawStr(60, 50, hourNow.c_str());
+      u8g2.drawXBMP(237,47,17,17,return_icon);
+      u8g2.drawFrame(236,46,20,18);
       break;
 
     case ACTIONS_MENU :   
@@ -387,11 +401,16 @@ void printPortionsMenuNavigation(){
     u8g2.drawButtonUTF8(90,17, U8G2_BTN_BW1, 0, 0, 0, "2");  
   } 
   u8g2.drawStr(0, 50, "Heure:");
-  if(feedingSelected == 1){
+  u8g2.drawStr(120, 50, "Nb:");
+
+  if((feedingSelected == 1 && row == 2) || (row == 1 && col == 1)){
     u8g2.drawStr(60,50, timeFeeding1.c_str());
+    u8g2.drawStr(155, 50, ((String)nbFeeding1).c_str());
+
   }
-  else if (feedingSelected==2){
+  else if ((feedingSelected == 2 && row == 2) || (row == 1 && col == 2) || (row == 3)){
     u8g2.drawStr(60,50, timeFeeding2.c_str());
+    u8g2.drawStr(155, 50, ((String)nbFeeding2).c_str()); 
   }
   if(row == 2){ //sélectionner chiffre
     switch (col)
@@ -408,6 +427,9 @@ void printPortionsMenuNavigation(){
     case 4:
       u8g2.drawLine(96,52,103,52);
       break;
+    case 5:
+      u8g2.drawLine(156,52,162,52);
+      break;
     default:
       break;
     }
@@ -421,6 +443,7 @@ void printPortionsMenuNavigation(){
   u8g2.sendBuffer();
 }
 
+/*retourne un string de temps HH:MM incrémenter ou décrementer*/
 String changeTime(String time, bool direction){
   char charHourMS = time.charAt(0);
   char charHourLS = time.charAt(1);
@@ -435,7 +458,10 @@ String changeTime(String time, bool direction){
         }
         break;
       case 2:
-        if(charHourLS < '9'){
+        if(charHourMS != '2' && charHourLS < '9'){
+          time[1] = charHourLS + 1;
+        }
+        else if(charHourMS == '2' && charHourLS < '4'){ //limite à 24
           time[1] = charHourLS + 1;
         }
         break;
@@ -479,6 +505,10 @@ String changeTime(String time, bool direction){
       default:
         break;
     }
+  }
+
+  if(time[0] == '2' && charHourLS > '4'){ //limite à 24h
+    time[1] = '4';
   }
 
   return time;
@@ -628,6 +658,27 @@ bool readCapProx(){
   return(capProx);
 }
 
+/*configure la flash et le RTC pour la distribution*/
+void updateFeedingParameters(){
+  prefs.putString("timeFeeding1", timeFeeding1); //update flash
+  prefs.getString("timeFeeding2", timeFeeding2);
+  tm.Second = 0;
+  tm.Minute = timeFeeding1.substring(3,5).toInt();
+  tm.Hour = timeFeeding1.substring(0,2).toInt();
+  RTC.set(makeTime(tm), ALARM1_ADDRESS);
+  tm.Minute = timeFeeding2.substring(3,5).toInt();
+  tm.Hour = timeFeeding2.substring(0,2).toInt();
+  RTC.set(makeTime(tm), ALARM2_ADDRESS);
+  Serial.println("New feeding parameters...");
+  Serial.println("timeFeeding1 : " + timeFeeding1);
+  Serial.println("timeFeeding2 : " + timeFeeding2);
+
+  prefs.putInt("nbFeeding1", nbFeeding1);
+  prefs.putInt("nbFeeding2", nbFeeding2);
+  Serial.println("nbFeeding1 : " + (String)nbFeeding1);
+  Serial.println("nbFeeding2 : " + (String)nbFeeding2);
+}
+
 
 void setup()
 {
@@ -651,11 +702,25 @@ void setup()
   u8g2.sendBuffer();
 
   //----------------------------------------------------FLASH
+  Serial.println("Reading flash...");
+  prefs.begin("cat-feeder", false);
+  ssid = prefs.getString("ssid", "Test");
+  Serial.println("SSID : " + ssid);
+  password = prefs.getString("password", "test1234");
+  Serial.println("password : " + password);
+  timeFeeding1 = prefs.getString("timeFeeding1", "08:00");
+  Serial.println("timeFeeding1 : " + timeFeeding1);
+  nbFeeding1 = prefs.getInt("nbFeeding1", 0);
+  Serial.println("nbFeeding1 : " + (String)nbFeeding1);
+  timeFeeding2 = prefs.getString("timeFeeding2", "17:00");
+  Serial.println("timeFeeding2 : " + timeFeeding2);
+  nbFeeding2 = prefs.getInt("nbFeeding2", 0);
+  Serial.println("nbFeeding2 : " + (String)nbFeeding2);
 
   //----------------------------------------------------Wi-Fi
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid.c_str(), password.c_str());
   int nbTries = 0;
   while (WiFi.status() != WL_CONNECTED && nbTries<10) { //timeout
     delay(500);
@@ -801,6 +866,10 @@ void setup()
   myservo.setPeriodHertz(50);      // standard 50 hz servo
 
   //-----------------------------------------------------Capteur de distance
+  pinMode(PIN_XSHUT_DIST, OUTPUT); //on essaie un reset du xshut du capteur de distance (résoue bug?)
+  digitalWrite(PIN_XSHUT_DIST, LOW);
+  delay(20);
+  digitalWrite(PIN_XSHUT_DIST, HIGH);
   sensor.setTimeout(500);
   //sensor.setTimeout(0);
   if (!sensor.init())
@@ -838,7 +907,7 @@ void setup()
   updateTime();
 
   //imprime menu principal
-  menu_selected = MAIN_MENU;
+  menu_selected = HOUR_MENU;
   printMenu(menu_selected);
 
   //ferme rgb
@@ -1025,7 +1094,7 @@ void loop()
         keypad_left = false;
       }
       if(keypad_up){
-        if(Item_selected_row == 2){
+        if(Item_selected_row == 2 && Item_selected_column<5){ //heure
           if(feedingSelected == 1){
             timeFeeding1 = changeTime(timeFeeding1, 1);
           }
@@ -1033,16 +1102,53 @@ void loop()
             timeFeeding2 = changeTime(timeFeeding2, 1);
           }
         }
+        if(Item_selected_row == 2 && Item_selected_column==5){ //nb
+          if(feedingSelected == 1){
+            if(nbFeeding1 < 9){
+              nbFeeding1++;
+            }
+            else{
+              nbFeeding1 = 0;
+            }
+          }
+          else if (feedingSelected == 2){
+            if(nbFeeding2 < 9){
+              nbFeeding2++;
+            }
+            else{
+              nbFeeding2 = 0;
+            }
+          }
+        }
+
         printPortionsMenuNavigation();
         keypad_up = false;
       }
       if(keypad_down){
-        if(Item_selected_row == 2){
+        if(Item_selected_row == 2  && Item_selected_column<5){ //heure
           if(feedingSelected == 1){
             timeFeeding1 = changeTime(timeFeeding1, 0);
           }
           else if (feedingSelected == 2){
             timeFeeding2 = changeTime(timeFeeding2, 0);
+          }
+        }
+        if(Item_selected_row == 2 && Item_selected_column==5){ //nb
+          if(feedingSelected == 1){
+            if(nbFeeding1 > 0){
+              nbFeeding1--;
+            }
+            else{
+              nbFeeding1 = 9;
+            }
+          }
+          else if (feedingSelected == 2){
+            if(nbFeeding2 > 0){
+              nbFeeding2--;
+            }
+            else{
+              nbFeeding2 = 9;
+            }
           }
         }
         printPortionsMenuNavigation();
@@ -1055,6 +1161,7 @@ void loop()
           printMenu(NAVIGATION_MENU);
           Item_selected_column = 1;
           Item_selected_row = 1;
+          updateFeedingParameters();
           keypad_select = false;
           break;
         }
@@ -1074,8 +1181,8 @@ void loop()
           keypad_select = false;
           break;
         }
-        if(Item_selected_row == 2){ //passe de chiffre en chiffre dans l'heure
-          if(Item_selected_column <4){
+        if(Item_selected_row == 2){ //passe de chiffre en chiffre dans l'heure et le nombre
+          if(Item_selected_column <5){
             Item_selected_column++;
             printPortionsMenuNavigation();
           }else{

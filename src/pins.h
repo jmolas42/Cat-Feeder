@@ -30,7 +30,7 @@
 #define PIN_IN_PROX 4        //DEL capteurs de proximité (même signal pour les deux)
 
 //Capteur de distance
-#define PIN_INT_DIST 6       //interrupt capteur de distance
+#define PIN_XSHUT_DIST 6       //xshut capteur de distance
 
 //Comm série
 #define PIN_SDA 8            //SDA
