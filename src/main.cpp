@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Wire.h>
 #include <IRremote.h> 
 #include <ESP32Servo.h>
 #include <SPI.h>
@@ -7,10 +6,10 @@
 #include <pins.h>
 #include <svg.h>
 #include <WiFi.h>
-#include <TimeLib.h>
-#include <DS1307RTC.h>
-#include <VL53L0X.h>
-#include "time.h"
+#include <DS1337RTC.h>
+#include <Time.h>
+#include <Wire.h>
+//#include <VL53L0X.h>
 
 //flags systeme
 bool criticalError = false;
@@ -32,7 +31,6 @@ bool criticalError = false;
 #define MAX_CSPS_120    0x05
 #define MAX_CSPS_240    0x06
 #define MAX_CSPS_480    0x07
-
 // registers: 
 #define MAX_CMD_REG     0xC0        // 0b11000000
 // register addresses:
@@ -47,7 +45,6 @@ bool criticalError = false;
 #define MAX_SCGC        0x08 << 1
 #define MAX_READ        0x01
 #define MAX_WRITE       0x00
-
 #define MAX_UNIPOLAR    0x40        // input range: defaults to bipolar (-AREF to +AREF). UNI = (0 to +AREF)
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 
@@ -56,7 +53,7 @@ bool wifiConnected = false;
 const char* ssid     = "Test";
 const char* password = "test1234";
 
-//Time
+//Time & RTC
 String hourNow = "00:00";
 int RTCTimeHour = 0;
 int RTCTimeMinutes =  0;
@@ -65,9 +62,11 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 0;
 const int   Offset_sec = -14400; //-4h
 tmElements_t tm;
+bool alarmRTC = false;
+bool updateTimeFlag = false;
 
 //capteur de distance
-VL53L0X sensor;
+//VL53L0X sensor;
 const int distanceMin = 325;
 
 //servo-porte
@@ -87,7 +86,7 @@ int counterRXUptime = 0;
 int lastFeeding = 1;
 int feedingPortions [2] = {0,0};
 String timeFeeding1 = "08:00";
-String timeFeeding2 = "00:00";
+String timeFeeding2 = "17:00";
 
 //Batteries
 uint8_t batTag = 0; //batterie balise 0 à 255
@@ -126,6 +125,7 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
       if(doorOpenedByCat){
         counterDoorOpenCatLeft++;
       }
+      updateTimeFlag = true;
   }
   /*if(timerSecond % 6 == 0){ //3 seconde
     commToStart = true;
@@ -169,6 +169,10 @@ void keypadSELECTInterrupt(){
     keypad_select = true;
     lastDebounceTime = millis();
   }
+}
+
+void alarmRTCInterrupt(){
+  alarmRTC = true;
 }
 
 
@@ -501,37 +505,29 @@ uint32_t getWeight(){
 }
 
 /*Lis et met a jour l'heure à l'aide du RTC*/
-void readRTC(){
-  tmElements_t tm;
+void updateTime(){
+  //lis l'heure
+  time_t clock = RTC.get(CLOCK_ADDRESS);
+  tmElements_t clockSet;
+  breakTime(clock, clockSet); //clock => clockset
 
-  if (RTC.read(tm)) {
-    //Serial.print("Ok, Time = ");
-    //Serial.print(return2digits(tm.Hour));
-    RTCTimeHour = tm.Hour;
-    //Serial.write(':');
-    //Serial.print(return2digits(tm.Minute));
-    RTCTimeMinutes = tm.Minute;
-    //Serial.write(':');
-    //Serial.print(return2digits(tm.Second));
-    RTCTimeSeconds = tm.Second;
-    //Serial.print(", Date (D/M/Y) = ");
-    //Serial.print(tm.Day);
-    //Serial.write('/');
-    //Serial.print(tm.Month);
-    //Serial.write('/');
-    //Serial.print(tmYearToCalendar(tm.Year));
-    //Serial.println();
-    hourNow = return2digits(tm.Hour) + ":" + return2digits(tm.Minute);
-  } else {
-    if (RTC.chipPresent()) {
-      Serial.println("The DS1307 is stopped.  Please run the SetTime");
-      Serial.println("example to initialize the time and begin running.");
-      Serial.println();
-    } else {
-      Serial.println("DS1307 read error!  Please check the circuitry.");
-      Serial.println();
-    }
-  }
+  //print the time using Time.h
+  Serial.print((int)clockSet.Day);
+  Serial.print(" ");
+  Serial.print((int)clockSet.Month);//monthName[month() - 1]);
+  Serial.print(" ");
+  Serial.print((int)(1970+clockSet.Year));//year());
+  Serial.print(" ");
+  Serial.print((int)clockSet.Hour);//hour());
+  Serial.print(return2digits(clockSet.Minute));//minute());
+  Serial.print(return2digits(clockSet.Second));//second());
+  Serial.println("");
+
+  //mets a jour l'heure
+  RTCTimeHour = clockSet.Hour;
+  RTCTimeMinutes = clockSet.Minute;
+  RTCTimeSeconds = clockSet.Second;
+  hourNow = return2digits(clockSet.Hour) + ":" + return2digits(clockSet.Minute);
 }
 
 /*0(off) à 255(on)*/
@@ -548,7 +544,7 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
 }
 
 /*lis le capteur de distance, retourne la distance en mm*/
-int readDistance(){
+/*int readDistance(){
   if (sensor.timeoutOccurred()) { 
     Serial.print(" TIMEOUT"); 
     if (!sensor.init()) //realive
@@ -558,7 +554,7 @@ int readDistance(){
     sensor.startContinuous();
   }
   return sensor.readRangeContinuousMillimeters();
-}
+}*/
 
 /*tourne une fois le distributeur*/
 void distribute(){
@@ -652,34 +648,60 @@ void setup()
     if(!getLocalTime(&timeinfo)){
       Serial.println("Failed to obtain time");
     }else{
-      RTCTimeHour = timeinfo.tm_hour;
-      RTCTimeMinutes = timeinfo.tm_min;
-      RTCTimeSeconds = timeinfo.tm_sec;
+      tm.Year = timeinfo.tm_year - 70;
+      tm.Month = timeinfo.tm_mon + 1;
+      tm.Day = timeinfo.tm_mday;
+      tm.Hour = timeinfo.tm_hour;
+      tm.Minute = timeinfo.tm_min;
+      tm.Second = timeinfo.tm_sec;
     }
-    Serial.print(RTCTimeHour);
-    Serial.print(RTCTimeMinutes);
-    Serial.println(RTCTimeSeconds);
+    Serial.print(tm.Hour);
+    Serial.print(tm.Minute);
+    Serial.println(tm.Second);
 
-    tm.Hour = RTCTimeHour;
-    tm.Minute = RTCTimeMinutes;
-    tm.Second = RTCTimeSeconds;
-
-    bool config=false;
-    if (RTC.write(tm)) { //set le RTC
-      config = true;
-    }
+    RTC.set(makeTime(tm), CLOCK_ADDRESS);
     
-    if (config) {
-      Serial.print("DS1307 configured Hour=");
-      Serial.print(RTCTimeHour);
-      Serial.print(", Minutes=");
-      Serial.println(RTCTimeMinutes);
-    } else {
-      Serial.println("DS1307 Communication Error :-{");
-      Serial.println("Please check your circuitry");
-      criticalError = true;
-    }
+    Serial.print("DS1307 configured Hour=");
+    Serial.print(tm.Hour);
+    Serial.print(", Minutes=");
+    Serial.println(tm.Minute);
   }
+  //alarme
+  pinMode(PIN_INT_RTC, INPUT);
+  digitalWrite(PIN_INT_RTC,HIGH);
+  attachInterrupt(PIN_INT_RTC, alarmRTCInterrupt, FALLING);
+  tm.Second = 0;
+  tm.Minute = timeFeeding1.substring(3,5).toInt();
+  tm.Hour = timeFeeding1.substring(0,2).toInt();
+  Serial.print("hour : ");
+  Serial.println(timeFeeding1.substring(0,2).toInt());
+  Serial.println();
+  RTC.set(makeTime(tm), ALARM1_ADDRESS);
+  tm.Minute = timeFeeding2.substring(3,5).toInt();
+  tm.Hour = timeFeeding2.substring(0,2).toInt();
+  RTC.set(makeTime(tm), ALARM2_ADDRESS);
+  RTC.enableAlarm(ALARM1_ADDRESS);
+  RTC.enableAlarm(ALARM2_ADDRESS);
+  RTC.freqSelect(1);  // set the squarewave freq on alarm pin b to 4.096kHz
+
+  time_t alarm1 = RTC.get(ALARM1_ADDRESS);  // get the time the alarm is set for
+  time_t alarm2 = RTC.get(ALARM2_ADDRESS);  // get the time the alarm is set for
+  tmElements_t alarmSet1;
+  tmElements_t alarmSet2;
+  breakTime(alarm1, alarmSet1);
+  breakTime(alarm2, alarmSet2);
+  // print the alarm time
+  Serial.print("ALARM1: ");
+  Serial.print((int)alarmSet1.Hour);
+  Serial.print(return2digits(alarmSet1.Minute));
+  Serial.print(return2digits(alarmSet1.Second));
+  Serial.print("\t");
+  // print the alarm time
+  Serial.print("ALARM2: ");
+  Serial.print((int)alarmSet2.Hour);
+  Serial.print(return2digits(alarmSet2.Minute));
+  Serial.print(return2digits(alarmSet2.Second));
+  Serial.println();
 
   //----------------------------------------------------Balance                      //délais??????????
   pinMode(PIN_CS_ADC_SCALE, OUTPUT); // set the SS pin as an output
@@ -754,7 +776,7 @@ void setup()
   myservo.setPeriodHertz(50);      // standard 50 hz servo
 
   //-----------------------------------------------------Capteur de distance
-  sensor.setTimeout(500);
+  /*sensor.setTimeout(500);
   //sensor.setTimeout(0);
   if (!sensor.init())
   {
@@ -765,7 +787,7 @@ void setup()
     criticalError = true;
     }
   }
-  sensor.startContinuous();
+  sensor.startContinuous();*/
 
   //-----------------------------------------------------Capteur de proximité
   pinMode(PIN_OUT_PROX_1, INPUT);
@@ -788,7 +810,7 @@ void setup()
   }
 
   //lire RTC
-  readRTC();
+  updateTime();
 
   //imprime menu principal
   menu_selected = MAIN_MENU;
@@ -808,7 +830,8 @@ void loop()
     switch (stateComm){
     case STANDBY :
     {
-      int dist = readDistance();
+      //int dist = readDistance();
+      int dist = 500;
       if (dist < distanceMin && dist > 50){ //présence détecté
         Serial.print("object detected at : ");
         Serial.print(dist);
@@ -887,74 +910,17 @@ void loop()
   }
 
 
-/*
-  //Lancer comm IR
-  if(!commToStart && !commStarted && !doorOpened && !doorOpenedByCat){
-    //int dist = readDistance();
-    //Serial.println(dist);
-    if (dist < distanceMin && dist > 50){
-      commToStart = true;
-    }
-  }*/
-
-  //Comm IR
-  /*if (commToStart){ //débute communication IR au 3 seconde
-    Serial.println("comm started");
-    setRGB(255,255,0); //jaune
-    tone(PIN_IR_TX, 49); //TX 50hz
-    counterTXUptime = 0;
-    commToStart = false;   
-    TXCommStarted = true;
-    IRTXup = true;
-  }
-  else if(TXCommStarted){ //communication IR en cours
-    if(counterTXUptime >= 1 && IRTXup){ //après 500ms
-      noTone(PIN_IR_TX); //ferme TX
-      setRGB(255,255,255); //blanc
-      commListen = true;
-      counterRXUptime = 0;
-      Serial.println("leds closed");
-      IRTXup = false;
-    }
-    if(commListen && counterRXUptime > 3){ //timeout 3 seconde
-      commListen = false;
-      TXCommStarted = false;
-      setRGB(0,0,0); //ferme rgb
-      IrReceiver.resume(); // Important, enables to receive the next IR signal
-    }
-    else if (IrReceiver.decode() && !IRTXup && commListen) { //décode IR recu de la balise
-      Serial.println("Received something...");    
-      IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
-      Serial.println();
-      if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address==0x12){ //check le protocole et adresse envoyé
-        //openDoor = true;
-        Serial.println("Tag code received!");
-        setRGB(148,0,211); //flash mauve
-        openDoor();
-        doorOpenedByCat = true;
-        counterDoorOpenCatLeft = 0;
-        TXCommStarted = false;
-        commListen = false;
-        setRGB(0,0,0); //ferme rgb
-      }
-    IrReceiver.resume(); // Important, enables to receive the next IR signal
-    }
-  }
-
-  if(doorOpenedByCat){ //ferme porte si chat parti
-    if(readCapProx()){ //chat encore la
-      counterDoorOpenCatLeft = 0;
-      setRGB(100,100,0);
-    }
-    if(counterDoorOpenCatLeft>3){ //chat parti depuis 3 seconde
-      closeDoor();
-      setRGB(0,0,0);
-      doorOpenedByCat = false;
-    }
-  }*/
-
   //Heure RTC
-  readRTC();
+  if(updateTimeFlag){ //update chaque seconde
+    updateTime();
+    updateTimeFlag = false;
+  }
+  if(alarmRTC){
+    Serial.println("ALARM!!!!");
+    alarmRTC = false;
+    RTC.resetAlarms();
+  }
+
 
   
   switch(menu_selected){
