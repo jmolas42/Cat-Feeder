@@ -640,6 +640,7 @@ void openDoor(){
   }
   myservo.detach();
   doorOpened = true;
+  prefs.putBool("doorOpened", true);
   }
 }
 
@@ -654,6 +655,7 @@ void closeDoor(){
   }
   myservo.detach();
   doorOpened = false;
+  prefs.putBool("doorOpened", false);
   }
 }
 
@@ -731,6 +733,8 @@ void setup()
   Serial.println("batTag : " + (String)batTag);
   tagID = prefs.getInt("tagID", 0x12);
   Serial.println("tagID : " + (String)tagID);
+  doorOpened = prefs.getBool("doorOpened", false);
+  Serial.println("doorOpened : " + (String)doorOpened);
 
   //----------------------------------------------------Wi-Fi
   Serial.print("Connecting to ");
@@ -918,6 +922,11 @@ void setup()
     while(true){};
   }
 
+  //porte
+  if(doorOpened){
+    closeDoor();
+  }
+
   //lire RTC
   updateTime();
 
@@ -1032,7 +1041,7 @@ void loop()
   }
 
 
-  if(timerScreenNoActivity >30){
+  if(timerScreenNoActivity >30 && screenON){
     Serial.println("Screen turned off");
     u8g2.sleepOn();
     screenON = false;
