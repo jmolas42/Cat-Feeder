@@ -907,7 +907,7 @@ void setup()
   updateTime();
 
   //imprime menu principal
-  menu_selected = HOUR_MENU;
+  menu_selected = MAIN_MENU;
   printMenu(menu_selected);
 
   //ferme rgb
@@ -1194,6 +1194,14 @@ void loop()
         keypad_select = false;
       }
 
+      break;
+
+    case HOUR_MENU:
+      if(keypad_select){
+        menu_selected = NAVIGATION_MENU;
+        printMenu(NAVIGATION_MENU);
+        keypad_select = false;
+      }
       break;
 
     case ACTIONS_MENU :
