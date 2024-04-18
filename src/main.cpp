@@ -6,10 +6,15 @@
 #include <pins.h>
 #include <svg.h>
 #include <WiFi.h>
+#include <DNSServer.h>
 #include <DS1337RTC.h>
 #include <Time.h>
 #include <Wire.h>
+#include <AsyncTCP.h>
+#include "ESPAsyncWebServer.h"
 #include <Preferences.h>
+#include <WiFiUdp.h>
+#include <SPIFFS.h>
 #include <VL53L0X.h>
 
 //flags systeme
@@ -58,6 +63,13 @@ float const calibration = 10.436;  //bits par gramme
 bool wifiConnected = false;
 String ssid     = "Test";
 String password = "test1234";
+DNSServer dnsServer;
+AsyncWebServer server(80);
+bool WifiCredentialsSet = false;
+bool WifiSTA = true; //configuration normale ou sinon AP pour la config
+bool upANDdownActivated = false; //si bouton hautet bas sont enfoncé
+int timerupANDdownActivated = 0;
+bool startBroadcast = false;
 
 //Time & RTC
 String hourNow = "00:00";
@@ -145,7 +157,11 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
 
-  if(timerSecond % 2 == 0){ //1 seconde
+  if(WifiSTA){ //mdde normal
+    if(timerSecond % 2 == 0){ //1 seconde
+      if(upANDdownActivated){
+        timerupANDdownActivated++;
+      }
       if(stateComm == RX_COMM){
         counterRXUptime++;
       }
@@ -162,14 +178,12 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
           setRGB(0,0,0);
         }
       }
+    }
+    if(stateComm == TX_COMM){
+      counterTXUptime++;
+    }
+    timerSecond++;
   }
-  /*if(timerSecond % 6 == 0){ //3 seconde
-    commToStart = true;
-  }*/
-  if(stateComm == TX_COMM){
-    counterTXUptime++;
-  }
-  timerSecond++;
 }
 
 void keypadUPInterrupt(){
@@ -214,6 +228,81 @@ void keypadSELECTInterrupt(){
 
 void alarmRTCInterrupt(){
   alarmRTC = true;
+}
+
+
+class CaptiveRequestHandler : public AsyncWebHandler
+{
+public:
+  CaptiveRequestHandler() {}
+  virtual ~CaptiveRequestHandler() {}
+
+  bool canHandle(AsyncWebServerRequest *request)
+  {
+    // request->addInterestingHeader("ANY");
+    return true;
+  }
+
+  void handleRequest(AsyncWebServerRequest *request)
+  {
+    request->send(SPIFFS, "/index.html", "text/html");
+  }
+};
+
+void setupServer()
+{
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(SPIFFS, "/index.html", "text/html"); 
+            Serial.println("Client Connected"); });
+
+  server.on("/get", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+      String inputMessage;
+      String inputParam;
+  
+      if (request->hasParam("ssid")) {
+        inputMessage = request->getParam("ssid")->value();
+        inputParam = "ssid";
+        ssid = inputMessage;
+        prefs.putString("ssid", inputMessage);
+        Serial.println(inputMessage);
+      }
+
+      if (request->hasParam("password")) {
+        inputMessage = request->getParam("password")->value();
+        inputParam = "password";
+        password = inputMessage;
+        prefs.putString("password", inputMessage);
+        Serial.println(inputMessage);
+      }
+      request->send(200, "text/html", "The values entered by you have been successfully sent to the device <br><a href=\"/\">Return to Home Page</a>");
+      WifiCredentialsSet = true; });
+}
+
+void connectWiFi()
+{
+  WiFi.persistent(false);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  WiFi.persistent(true);
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid.c_str(), password.c_str());
+  int nbTries = 0;
+  while (WiFi.status() != WL_CONNECTED && nbTries<15) { //timeout
+    delay(500);
+    Serial.print(".");
+    nbTries++;
+  }
+  if(WiFi.status() == WL_CONNECTED){ //imprime info si connecté
+    Serial.println("");
+    Serial.println("WiFi connected.");
+    wifiConnected = true;
+    Serial.println(WiFi.localIP());
+  }
+  else{
+    Serial.println("Unable to connect to WiFi");
+  }
 }
 
 
@@ -739,6 +828,24 @@ void setup()
   u8g2.drawXBMP(76,0,103,64,logo);
   u8g2.sendBuffer();
 
+  //----------------------------------------------------SPIFFS
+  if (!SPIFFS.begin())
+  {
+    Serial.println("Erreur SPIFFS...");
+    return;
+  }
+
+  File root = SPIFFS.open("/");
+  File fileSpiffs = root.openNextFile();
+
+  while (fileSpiffs) // Montre tout les fichiers dans la flash
+  {
+    Serial.print("File: ");
+    Serial.println(fileSpiffs.name());
+    fileSpiffs.close();
+    fileSpiffs = root.openNextFile();
+  }
+
   //----------------------------------------------------FLASH
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
@@ -762,24 +869,7 @@ void setup()
   Serial.println("doorOpened : " + (String)doorOpened);
 
   //----------------------------------------------------Wi-Fi
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid.c_str(), password.c_str());
-  int nbTries = 0;
-  while (WiFi.status() != WL_CONNECTED && nbTries<10) { //timeout
-    delay(500);
-    Serial.print(".");
-    nbTries++;
-  }
-  if(WiFi.status() == WL_CONNECTED){ //imprime info si connecté
-    Serial.println("");
-    Serial.println("WiFi connected.");
-    wifiConnected = true;
-    Serial.println(WiFi.localIP());
-  }
-  else{
-    Serial.println("Unable to connect to WiFi");
-  }
+  connectWiFi();
 
   //----------------------------------------------------Time & RTC
   if(WiFi.status() == WL_CONNECTED){
@@ -801,7 +891,24 @@ void setup()
 
     RTC.set(makeTime(tm), CLOCK_ADDRESS);
     
-    Serial.print("DS1307 configured Hour=");
+    Serial.print("DS1337 configured Hour=");
+    Serial.print(tm.Hour);
+    Serial.print(", Minutes=");
+    Serial.println(tm.Minute);
+  }
+  else{ //pas d'internet => minuit
+    tm.Year = 2000 - 1970;
+    tm.Month = 2;
+    tm.Day = 1;
+    tm.Hour = 0;
+    tm.Minute = 0;
+    tm.Second = 0;
+    Serial.print(tm.Hour);
+    Serial.print(tm.Minute);
+    Serial.println(tm.Second);
+
+    RTC.set(makeTime(tm), CLOCK_ADDRESS);
+    Serial.print("DS1337 configured Hour by default=");
     Serial.print(tm.Hour);
     Serial.print(", Minutes=");
     Serial.println(tm.Minute);
@@ -956,15 +1063,79 @@ void setup()
   menu_selected = MAIN_MENU;
   printMenu(menu_selected);
   screenON = true;
+  timerScreenNoActivity = 0;
 
 }
 
 
 void loop()
 {
+  if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
+    if(!upANDdownActivated && !startBroadcast){ //appui débuté
+      upANDdownActivated = true;
+      timerupANDdownActivated = 0;
+    }
+    if(upANDdownActivated && timerupANDdownActivated >= 3){ //appui fin 3 sec
+      startBroadcast = true;
+      upANDdownActivated = false;
+    }
+  }else if(upANDdownActivated){ //appui arreté avant fin
+    upANDdownActivated = false;
+  }
+
+  if (startBroadcast && WifiSTA)
+  {
+    WifiSTA = false;
+    Serial.println();
+    Serial.println("Setting up AP Mode");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("CatFeeder_0001", "12345678");
+    Serial.print("AP IP address: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.println("Setting up Async WebServer");
+    setupServer();
+    Serial.println("Starting DNS Server");
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER); // only when requested from AP
+    server.begin();
+    Serial.println("All Done!");
+    u8g2.sleepOff();
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_helvR14_tr);
+    u8g2.drawStr(0, 17, "SSID: CatFeeder_0001");
+    u8g2.drawStr(0, 50, "mdp: 12345678");
+    u8g2.sendBuffer();
+    setRGB(255,140,0); //orange
+  }
+
+  // Access point
+  if (WiFi.getMode() == WIFI_AP)
+  {
+    dnsServer.processNextRequest();
+    if (WifiCredentialsSet)
+    {
+      u8g2.clearBuffer();
+      u8g2.drawXBMP(76, 0, 103, 64, logo);
+      u8g2.sendBuffer();
+      connectWiFi();
+      WifiSTA = true;
+      WifiCredentialsSet = false;
+      setRGB(0, 0, 0);
+      keypad_up = false;
+      keypad_down = false;
+      keypad_left = false;
+      keypad_right = false;
+      keypad_select = false;
+      startBroadcast= false;
+      menu_selected = MAIN_MENU;
+      printMenu(menu_selected);
+      screenON = true;
+      timerScreenNoActivity = 0;
+    }
+  }
 
   //Comm IR
-  if(!doorOpened || stateComm == CAT_EATING){
+  if(WifiSTA && (!doorOpened || stateComm == CAT_EATING)){
     switch (stateComm){
     case STANDBY :
     {
@@ -1047,11 +1218,11 @@ void loop()
 
 
   //Heure RTC
-  if(updateTimeFlag){ //update chaque seconde
+  if(WifiSTA && updateTimeFlag){ //update chaque seconde
     updateTime();
     updateTimeFlag = false;
   }
-  if(alarmRTC){
+  if(WifiSTA && alarmRTC){
     Serial.println("ALARM!!!!");
     alarmRTC = false;
     RTC.resetAlarms();
@@ -1078,19 +1249,22 @@ void loop()
   }
 
 
-  if(timerScreenNoActivity >30 && screenON){
+  if(WifiSTA && timerScreenNoActivity >30 && screenON){
     Serial.println("Screen turned off");
     u8g2.sleepOn();
     screenON = false;
     menu_selected = SCREEN_OFF;
   }
 
+
+  if(WifiSTA){
   switch(menu_selected){
     case SCREEN_OFF :
       if(keypad_select){
         Serial.println("Screen turned on");
         u8g2.sleepOff();
         screenON = true;
+        timerScreenNoActivity=0;
         menu_selected = MAIN_MENU;
         printMenu(menu_selected);
         keypad_select = false;
@@ -1365,6 +1539,7 @@ void loop()
 
     default : 
       break;
+  }
   }
 
 }
