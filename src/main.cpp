@@ -52,7 +52,7 @@ Preferences prefs;
 #define MAX_UNIPOLAR    0x40        // input range: defaults to bipolar (-AREF to +AREF). UNI = (0 to +AREF)
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 int weight = 0;
-int const calibration = 1000;//???
+float const calibration = 10.436;  //bits par gramme
 
 //WiFi
 bool wifiConnected = false;
@@ -635,7 +635,15 @@ int readDistance(){
 /*tourne une fois le distributeur*/
 void distribute(){
   digitalWrite(PIN_MOTOR_DIST, HIGH);
-  while(digitalRead(PIN_SWITCH_DIST) == LOW){} //tourne
+  bool next = false;
+  while(!next){
+    int first = digitalRead(PIN_SWITCH_DIST);
+    delay(10);
+    int second = digitalRead(PIN_SWITCH_DIST);
+    if(first && second){ //deux a high
+      next = true;
+    }
+  }
   while(digitalRead(PIN_SWITCH_DIST) == HIGH){} //tourne encore
   digitalWrite(PIN_MOTOR_DIST, LOW); //arrete
 }
@@ -683,7 +691,7 @@ bool readCapProx(){
 /*configure la flash et le RTC pour la distribution*/
 void updateFeedingParameters(){
   prefs.putString("timeFeeding1", timeFeeding1); //update flash
-  prefs.getString("timeFeeding2", timeFeeding2);
+  prefs.putString("timeFeeding2", timeFeeding2);
   tm.Second = 0;
   tm.Minute = timeFeeding1.substring(3,5).toInt();
   tm.Hour = timeFeeding1.substring(0,2).toInt();
@@ -1047,6 +1055,26 @@ void loop()
     Serial.println("ALARM!!!!");
     alarmRTC = false;
     RTC.resetAlarms();
+    int nbFeeding = 0;
+    String h = hourNow.substring(0,2);
+    if(h==timeFeeding1.substring(0,2)){ //hours ok
+      int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
+      int mF = timeFeeding1.substring(3,5).toInt();
+      if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
+        nbFeeding = nbFeeding1;
+      }
+    }
+    else if(h==timeFeeding2.substring(0,2)){ //hours ok
+      int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
+      int mF = timeFeeding2.substring(3,5).toInt();
+      if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
+        nbFeeding = nbFeeding2;
+      }
+    }
+    
+    for(int i=0; i<nbFeeding; i++){
+      distribute();
+    }
   }
 
 
@@ -1338,58 +1366,5 @@ void loop()
     default : 
       break;
   }
-
-
-  /*if (IrReceiver.decode()) { //decode IR recu de la balise
-    Serial.println("Received something...");    
-    IrReceiver.printIRResultShort(&Serial); // Prints a summary of the received data
-    Serial.println();
-    if(IrReceiver.decodedIRData.protocol == NEC && IrReceiver.decodedIRData.address==0x12 && IrReceiver.decodedIRData.command==0x34){ //check le protocole et adresse et commande envoyer
-      openDoor = true;
-    }
-    IrReceiver.resume(); // Important, enables to receive the next IR signal
-  }  */
-
-  /*if(openDoor){
-    myservo.write(180);
-    counterTimeDoorOpen = 0;
-    doorOpened = true;
-    u8g2.clearBuffer();                    // clear the internal memory
-    u8g2.drawStr(10, 20, "Door open");         // write something to the internal memory
-    u8g2.sendBuffer();
-    openDoor = false;
-  }
-
-  if(doorOpened){
-    Serial.println("counter dooropen : " + (String)counterTimeDoorOpen);
-  }
-  if(doorOpened && counterTimeDoorOpen>10 && distance >= distanceMin){ //ferme la porte après 10 seconde si il ny a plus personne
-      myservo.write(0);
-      doorOpened = false;
-      u8g2.clearBuffer();                    // clear the internal memory
-      u8g2.drawStr(10, 20, "Door close");         // write something to the internal memory
-      u8g2.sendBuffer();
-  }
-  else if(doorOpened && counterTimeDoorOpen>10 && distance <= distanceMin){ //quelqun mange toujours
-    counterTimeDoorOpen = 0;
-  }*/
-
-  /*if(measureDistance){ //mesure distance au sec
-    VL53LX_MultiRangingData_t measurement = vl53lxWrapper->getLatestMeasurement();
-    distance = measurement.RangeData->RangeMilliMeter;
-    Serial.println(distance);
-    measureDistance = false;
-  }*/
-/*
-  if(distance <= distanceMin){ //Présence détecté : allume DEL IR
-    commStarted = true;
-    counterTxUptime = 0;
-    digitalWrite(PIN_ACTI, HIGH);
-  }
-  if(counterTxUptime>2 && commStarted == true){ //Fini de flasher la LED IR pour 1 sec
-    digitalWrite(PIN_ACTI, LOW);
-    commStarted = false;
-    counterTxUptime = 0;
-  }*/
 
 }
