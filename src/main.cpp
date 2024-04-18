@@ -1112,7 +1112,7 @@ void loop()
   if (WiFi.getMode() == WIFI_AP)
   {
     dnsServer.processNextRequest();
-    if (WifiCredentialsSet)
+    if (WifiCredentialsSet || digitalRead(PIN_BUT_SELECT) == LOW)
     {
       u8g2.clearBuffer();
       u8g2.drawXBMP(76, 0, 103, 64, logo);
