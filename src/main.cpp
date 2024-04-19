@@ -655,7 +655,9 @@ uint32_t getWeight(){
   value = (float)value/6;
   SPI.end();
   u8g2.initInterface();
-  u8g2.setPowerSave(0);
+  if(screenON){
+    u8g2.setPowerSave(0);
+  }
   return value;
 }
 
