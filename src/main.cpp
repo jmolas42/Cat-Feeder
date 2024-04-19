@@ -690,19 +690,38 @@ void updateTime(){
 
 /*lis le capteur de distance, retourne la distance en mm*/
 int readDistance(){
-  int dist = sensor.readRangeContinuousMillimeters();
   bool ok = false;
-  distances[distancesIndex] = dist;
-  if(dist>50 && dist<325){
-    int moyenne = (float)(distances[0]+distances[1]+distances[2]) / 3;
-    if(dist < moyenne + 20 && dist > moyenne - 20){ //si les 3 derniere distance sont pas trop éloigné
-      Serial.print("ALLOWED ");
-      ok = true;
-      Serial.println(dist);
+  int dist = 0;
+  digitalWrite(PIN_XSHUT_DIST, LOW);
+  delay(20);
+  digitalWrite(PIN_XSHUT_DIST, HIGH);
+  sensor.setTimeout(500);
+  //sensor.setTimeout(0);
+  if (!sensor.init())
+  {
+    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
+      if (!sensor.init())
+    {
+    Serial.println("Failed to detect and initialize sensor! OOPS");
+    criticalError = true;
     }
-    else{
-      Serial.print("NOT ALLOWED ");
-      Serial.println(dist);
+  }
+  else{
+    sensor.startContinuous();
+    dist = sensor.readRangeContinuousMillimeters();
+    distances[distancesIndex] = dist;
+    if(dist>50 && dist<325){
+      int moyenne = (float)(distances[0]+distances[1]+distances[2]) / 3;
+      if(dist < moyenne + 20 && dist > moyenne - 20){ //si les 3 derniere distance sont pas trop éloigné
+        Serial.print("ALLOWED ");
+        ok = true;
+        Serial.println(dist);
+      }
+      else{
+        Serial.print("NOT ALLOWED ");
+        Serial.println(dist);
+      }
+      digitalWrite(PIN_XSHUT_DIST, LOW);
     }
   }
 
@@ -1024,21 +1043,6 @@ void setup()
 
   //-----------------------------------------------------Capteur de distance
   pinMode(PIN_XSHUT_DIST, OUTPUT); //on essaie un reset du xshut du capteur de distance (résoue bug?)
-  digitalWrite(PIN_XSHUT_DIST, LOW);
-  delay(20);
-  digitalWrite(PIN_XSHUT_DIST, HIGH);
-  sensor.setTimeout(500);
-  //sensor.setTimeout(0);
-  if (!sensor.init())
-  {
-    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
-      if (!sensor.init())
-    {
-    Serial.println("Failed to detect and initialize sensor! OOPS");
-    criticalError = true;
-    }
-  }
-  sensor.startContinuous();
 
   //-----------------------------------------------------Capteur de proximité
   pinMode(PIN_OUT_PROX_1, INPUT);
