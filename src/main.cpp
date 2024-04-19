@@ -101,6 +101,7 @@ enum StatesComm  {STANDBY, TX_COMM, RX_COMM, CAT_EATING};
 StatesComm stateComm = STANDBY;
 int counterTXUptime = 0;
 int counterRXUptime = 0;
+int millisCommIR = 0;
 int tagID = 0x12;
 
 //Portions
@@ -669,7 +670,7 @@ void updateTime(){
   breakTime(clock, clockSet); //clock => clockset
 
   //print the time using Time.h
-  Serial.print((int)clockSet.Day);
+  /*Serial.print((int)clockSet.Day);
   Serial.print(" ");
   Serial.print((int)clockSet.Month);//monthName[month() - 1]);
   Serial.print(" ");
@@ -678,7 +679,7 @@ void updateTime(){
   Serial.print((int)clockSet.Hour);//hour());
   Serial.print(return2digits(clockSet.Minute));//minute());
   Serial.print(return2digits(clockSet.Second));//second());
-  Serial.println("");
+  Serial.println("");*/
 
   //mets a jour l'heure
   RTCTimeHour = clockSet.Hour;
@@ -997,7 +998,7 @@ void setup()
   delay(50);
 
   SPI.end();
-  u8g2.beginSimple();
+  u8g2.initInterface();
   u8g2.setPowerSave(0);
 
 
@@ -1078,7 +1079,7 @@ void setup()
 
 void loop()
 {
-  if(WifiSTA){
+  /*if(WifiSTA){
     weight = getWeight();
     printf("\r\n");
     printf("valueX : 0x%X\r\n", weight);
@@ -1087,7 +1088,7 @@ void loop()
     delay(500);
     int w = ((float)weight - 2890 ) / 10.436; 
     printf("gramme : %d g\r\n", w);
-  }
+  }*/
 
   if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
     if(!upANDdownActivated && !startBroadcast){ //appui débuté
@@ -1165,23 +1166,26 @@ void loop()
         Serial.println("mm");
         setRGB(255,255,255); //blanc    
         stateComm = TX_COMM;        
-        counterTXUptime = 0; 
+        counterTXUptime = 0;
+        millisCommIR = millis(); 
         tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
       }
       break;
     }
     case TX_COMM :
     {
-      if(counterTXUptime >= 1){ //500ms se sont passé
+      if(millis() > millisCommIR+400){ //400ms se sont passé
         stateComm = RX_COMM;        
         counterRXUptime = 0; 
         noTone(PIN_IR_TX); //ferme DEL IR
+        millisCommIR = millis();
       }
       break;
     }
     case RX_COMM :
     {
-      if(counterRXUptime >=1){ //timeout 1 seconde
+
+      if(millis() > millisCommIR + 1000){ //timeout 1 seconde
         setRGB(0,0,0); //ferme RGB    
         stateComm = STANDBY;
         IrReceiver.resume(); // Important, enables to receive the next IR signal
