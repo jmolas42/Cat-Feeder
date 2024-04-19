@@ -115,6 +115,9 @@ int nbFeeding2 = 0;
 //Batteries
 uint8_t batTag = 0; //batterie balise 0 à 255
 uint8_t batDis = 0; //batterie distributeur 0 à 255
+bool lowBattery = false;
+bool readBattery = false;
+int timerLowBattery = 0; //timer RGB flash rouge si batterie presque vide
 
 //Interface utilisateur
 U8G2_SSD1322_NHD_256X64_F_4W_SW_SPI u8g2(U8G2_R0, /* clock=*/PIN_SCK, /* data=*/PIN_MOSI, /* cs=*/PIN_CS_SCREEN, /* dc=*/PIN_DC_SCREEN, /* reset=*/PIN_RESET_SCREEN); // Enable U8G2_16BIT in u8g2.h
@@ -136,6 +139,14 @@ bool screenON = false;
 int powerLEDTimer = 0;
 bool powerLEDON = true;
 
+uint8_t RGB_R = 0;
+uint8_t RGB_G = 0;
+uint8_t RGB_B = 0;
+uint8_t RGB_R_Last = 0;
+uint8_t RGB_G_Last = 0;
+uint8_t RGB_B_Last = 0;
+
+
 // Timer
 hw_timer_t *timer = NULL;
 volatile bool interruptbool1 = false;
@@ -143,6 +154,12 @@ int timerSecond =  0; //pair si timer tombe sur 1 seconde
 
 /*0(off) à 255(on)*/
 void setRGB(uint8_t r, uint8_t g, uint8_t b){
+  RGB_R_Last = RGB_R;
+  RGB_G_Last = RGB_G;
+  RGB_B_Last = RGB_B;
+  RGB_R = r;
+  RGB_G = g;
+  RGB_B = b;
   r = (((float)(255-r))/255)*140 + 115; //réduis intensité
   g = (((float)(255-g))/255)*140 + 115;
   b = (((float)(255-b))/255)*140 + 115;
@@ -154,11 +171,24 @@ void setRGB(uint8_t r, uint8_t g, uint8_t b){
   analogWrite(PIN_RGB_B, b);
 }
 
+/*remets la RGB à ce qu'elle était avant*/
+void setRGBlast(){
+  uint8_t r = (((float)(255-RGB_R_Last))/255)*140 + 115; //réduis intensité
+  uint8_t g = (((float)(255-RGB_G_Last))/255)*140 + 115;
+  uint8_t b = (((float)(255-RGB_B_Last))/255)*140 + 115;
+  analogWrite(PIN_RGB_R, r);
+  analogWrite(PIN_RGB_G, g);
+  analogWrite(PIN_RGB_B, b);
+}
+
 void IRAM_ATTR onTimer()  //compteur de 500ms
 {
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
 
   if(WifiSTA){ //mdde normal
+    if(timerSecond % 60 == 0){ //1 minute
+      readBattery = true;
+    }
     if(timerSecond % 2 == 0){ //1 seconde
       if(upANDdownActivated){
         timerupANDdownActivated++;
@@ -178,6 +208,9 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
         if(powerLEDTimer == 5){
           setRGB(0,0,0);
         }
+      }
+      if(lowBattery){
+        timerLowBattery++;
       }
     }
     if(stateComm == TX_COMM){
@@ -1036,6 +1069,8 @@ void setup()
   //-----------------------------------------------------BATTERIE
   pinMode(PIN_BATT_MON, INPUT);
   batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
+  Serial.print("batDis: ");
+  Serial.println(batDis);
 
   //-----------------------------------------------------Servo
   //ESP32PWM::allocateTimer(4);
@@ -1083,16 +1118,24 @@ void setup()
 
 void loop()
 {
-  /*if(WifiSTA){
-    weight = getWeight();
-    printf("\r\n");
-    printf("valueX : 0x%X\r\n", weight);
-    printf("value : %d\r\n", weight);
-    //printf("voltage : %.2fV\r\n", ((float)value/65535)*3.3);
-    delay(500);
-    int w = ((float)weight - 2890 ) / 10.436; 
-    printf("gramme : %d g\r\n", w);
-  }*/
+  if(readBattery && WifiSTA){
+    batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
+    Serial.print("batDis: ");
+    Serial.println(batDis);
+    if(batDis < 30){
+      lowBattery = true;
+    }
+    else{
+      lowBattery = false;
+    }
+    readBattery = false;
+  }
+  if(lowBattery && timerLowBattery >= 300 && !(RGB_R==255 && RGB_G==0 && RGB_B==0)){//allume RGB rouge si batterie vide au 5 minute
+    setRGB(255,0,0);
+  }
+  if(lowBattery && timerLowBattery >= 305 && (RGB_R==255 && RGB_G==0 && RGB_B==0)){//5 seconde plus tard on remets la led
+    setRGBlast();
+  }
 
   if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
     if(!upANDdownActivated && !startBroadcast){ //appui débuté
