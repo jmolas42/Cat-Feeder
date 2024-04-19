@@ -637,7 +637,7 @@ String changeTime(String time, bool direction){
 }
 
 uint32_t getWeight(){
-  //read ADC 6 times
+  SPI.begin();
   uint32_t value = 0;
   for(int i = 0; i<6; i++){
     digitalWrite(33, LOW);           // set the SS pin HIGH
@@ -653,12 +653,9 @@ uint32_t getWeight(){
     delay(150);
   }
   value = (float)value/6;
-
-  printf("\r\n");
-  printf("valueX : 0x%X\r\n", value);
-  printf("value : %d\r\n", value);
-  //printf("voltage : %.2fV\r\n", ((float)value/65535)*3.3);
-  
+  SPI.end();
+  u8g2.initInterface();
+  u8g2.setPowerSave(0);
   return value;
 }
 
@@ -948,49 +945,58 @@ void setup()
   Serial.println();
 
   //----------------------------------------------------Balance                      //délais??????????
-  pinMode(PIN_CS_ADC_SCALE, OUTPUT); // set the SS pin as an output
-  //SPI.begin();
+  pinMode(33, OUTPUT); // set the SS pin as an output
+  SPI.begin();
 
-  digitalWrite(PIN_CS_ADC_SCALE, LOW);            // set the SS pin to LOW
+  digitalWrite(33, LOW);            // set the SS pin to LOW
   uint8_t cmds = 0x90; //0x48
   SPI.transfer(cmds);
-  digitalWrite(PIN_CS_ADC_SCALE, HIGH); 
+  digitalWrite(33, HIGH); 
 
   delay(1000);
 
   //Buffer and unipolar
-  digitalWrite(PIN_CS_ADC_SCALE, LOW);
+  digitalWrite(33, LOW);
   uint8_t cmd = (MAX_CMD_REG | MAX_CTRL1) | MAX_WRITE;
   uint8_t ctrl = 0b01011000; 
   SPI.transfer(cmd);
   SPI.transfer(ctrl);
-  digitalWrite(PIN_CS_ADC_SCALE, HIGH);
+  digitalWrite(33, HIGH);
 
   delay(500);
 
   //gain and Self-calibration
-  digitalWrite(PIN_CS_ADC_SCALE, LOW);
+  digitalWrite(33, LOW);
   uint8_t cmdg = (MAX_CMD_REG | MAX_CTRL3) | MAX_WRITE;
   uint8_t ctrlg = 0b11111000; 
   SPI.transfer(cmdg);
   SPI.transfer(ctrlg);
-  digitalWrite(PIN_CS_ADC_SCALE, HIGH);
+  digitalWrite(33, HIGH);
 
   delay(500);
+
 
   //Conv
-  digitalWrite(PIN_CS_ADC_SCALE, LOW);            // set the SS pin to LOW
+  digitalWrite(33, LOW);            // set the SS pin to LOW
   uint8_t cmd0 = MAX_CMD_CONV | MAX_SPS_10; //rate 0 (base)
   SPI.transfer(cmd0);
-  digitalWrite(PIN_CS_ADC_SCALE, HIGH); 
+  digitalWrite(33, HIGH); 
+
   delay(500);
+
   //Make sure its fine by reading CTRL1
-  digitalWrite(PIN_CS_ADC_SCALE, LOW);           // set the SS pin HIGH
+  digitalWrite(33, LOW);           // set the SS pin HIGH
   uint8_t cmd2 = (MAX_CMD_REG | MAX_CTRL1) | MAX_READ;
   SPI.transfer(cmd2);             // send a write command to the MCP4131 to write at registry address 0x00
   uint8_t val = SPI.transfer(0);
   Serial.println("val : " + (String)val);
-  digitalWrite(PIN_CS_ADC_SCALE, HIGH);           // set the SS pin HIGH
+  digitalWrite(33, HIGH);           // set the SS pin HIGH
+
+  delay(50);
+
+  SPI.end();
+  u8g2.beginSimple();
+  u8g2.setPowerSave(0);
 
 
   //-----------------------------------------------------BOUTONS
@@ -1070,6 +1076,17 @@ void setup()
 
 void loop()
 {
+  if(WifiSTA){
+    weight = getWeight();
+    printf("\r\n");
+    printf("valueX : 0x%X\r\n", weight);
+    printf("value : %d\r\n", weight);
+    //printf("voltage : %.2fV\r\n", ((float)value/65535)*3.3);
+    delay(500);
+    int w = ((float)weight - 2890 ) / 10.436; 
+    printf("gramme : %d g\r\n", w);
+  }
+
   if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
     if(!upANDdownActivated && !startBroadcast){ //appui débuté
       upANDdownActivated = true;
