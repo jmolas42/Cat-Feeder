@@ -387,10 +387,10 @@ void printMenu(Menus ms){
         u8g2.drawXBMP(0,50,15,15,no_wifi_icon);
       }
       //batterie distributeur
-      if(batDis == 0){ //0
+      if(batDis <=5){ //0
         u8g2.drawXBMP(45,45,25,25,battery_empty_icon);
       }
-      else if(batDis > 0 && batDis <= 30){ //15
+      else if(batDis > 5 && batDis <= 30){ //15
         u8g2.drawXBMP(45,45,25,25,battery_low_icon);
       }
       else if(batDis > 31 && batDis <= 95){ //63
@@ -1130,11 +1130,16 @@ void loop()
     }
     readBattery = false;
   }
+
+
   if(lowBattery && timerLowBattery >= 300 && !(RGB_R==255 && RGB_G==0 && RGB_B==0)){//allume RGB rouge si batterie vide au 5 minute
     setRGB(255,0,0);
+    Serial.println("Open RGB low battery");
   }
   if(lowBattery && timerLowBattery >= 305 && (RGB_R==255 && RGB_G==0 && RGB_B==0)){//5 seconde plus tard on remets la led
     setRGBlast();
+    timerLowBattery = 0;
+    Serial.println("Close RGB low battery");
   }
 
   if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
