@@ -31,7 +31,7 @@ Preferences prefs;
 #define INFLUXDB_ORG "b42d947af9eaac69"
 #define INFLUXDB_BUCKET "Weight_test"
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Point weight_DB("wifi_status");
+Point weight_DB("weight");
 
 //balance 
 // conversion speeds ((Continuous) Samples Per Second)
@@ -66,7 +66,8 @@ Point weight_DB("wifi_status");
 #define MAX_WRITE       0x00
 #define MAX_UNIPOLAR    0x40        // input range: defaults to bipolar (-AREF to +AREF). UNI = (0 to +AREF)
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
-int weight = 0;
+float weight_g = 0;
+int weight_ADC = 0;
 float const calibration = 10.436;  //bits par gramme
 
 //WiFi
@@ -680,6 +681,7 @@ String changeTime(String time, bool direction){
   return time;
 }
 
+//retourne valeur ADC du poids
 uint32_t getWeight(){
   SPI.begin();
   uint32_t value = 0;
@@ -703,6 +705,18 @@ uint32_t getWeight(){
     u8g2.setPowerSave(0);
   }
   return value;
+}
+
+void updateWeight(){
+  uint32_t w = getWeight();
+  w = w - weight_ADC; //on cherche juste la variation de l'ADC
+  weight_g = weight_g + (w/calibration); //on ajoute le nouveau nombre de gramme
+  weight_ADC = w; //mets a jour la derniere valeur de l'ADC
+  prefs.putFloat("weight_g", weight_g);
+  prefs.putInt("weight_ADC", weight_ADC);
+  Serial.println("weight_g : " + (String)weight_g);
+  Serial.println("weight_ADC : " + (String)weight_ADC);
+
 }
 
 /*Lis et met a jour l'heure à l'aide du RTC*/
@@ -780,6 +794,25 @@ int readDistance(){
   }
   else{
     return 0;
+  }
+}
+
+void sendToInfluxDB(){
+  // Clear fields for reusing the point. Tags will remain the same as set above.
+  weight_DB.clearFields();
+
+  // Store measured value into point
+  // Report RSSI of currently connected network
+  weight_DB.addField("Weight_g", weight_g);
+
+  // Print what are we exactly writing
+  Serial.print("Writing: ");
+  Serial.println(weight_DB.toLineProtocol());
+
+  // Write point
+  if (!client.writePoint(weight_DB)) {
+    Serial.print("InfluxDB write failed: ");
+    Serial.println(client.getLastErrorMessage());
   }
 }
 
@@ -929,6 +962,11 @@ void setup()
   Serial.println("tagID : " + (String)tagID);
   doorOpened = prefs.getBool("doorOpened", false);
   Serial.println("doorOpened : " + (String)doorOpened);
+  weight_g = prefs.getFloat("weight_g", 0);
+  Serial.println("weight_g : " + (String)weight_g);
+  weight_ADC = prefs.getInt("weight_ADC", 0);
+  Serial.println("weight_ADC : " + (String)weight_ADC);
+
 
   //----------------------------------------------------Wi-Fi
   connectWiFi();
@@ -1020,8 +1058,7 @@ void setup()
     }
 
     // Add tags to the data point
-    weight_DB.addTag("device", "CATFEEDER");
-    weight_DB.addTag("SSID", WiFi.SSID());
+    weight_DB.addTag("device", "CatFeeder_0001");
 
   //----------------------------------------------------Balance                      //délais??????????
   pinMode(33, OUTPUT); // set the SS pin as an output
@@ -1143,22 +1180,6 @@ void setup()
 void loop()
 {
 
-  // Clear fields for reusing the point. Tags will remain the same as set above.
-  weight_DB.clearFields();
-
-  // Store measured value into point
-  // Report RSSI of currently connected network
-  weight_DB.addField("rssi", WiFi.RSSI());
-
-  // Print what are we exactly writing
-  Serial.print("Writing: ");
-  Serial.println(weight_DB.toLineProtocol());
-
-  // Write point
-  if (!client.writePoint(weight_DB)) {
-    Serial.print("InfluxDB write failed: ");
-    Serial.println(client.getLastErrorMessage());
-  }
 
 
   if(readBattery && WifiSTA){
@@ -1322,6 +1343,7 @@ void loop()
         setRGB(0,0,0);
         doorOpenedByCat = false;
         stateComm = STANDBY;
+        updateWeight();
       }
       break;
     }
