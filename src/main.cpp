@@ -16,12 +16,22 @@
 #include <WiFiUdp.h>
 #include <SPIFFS.h>
 #include <VL53L0X.h>
+#include <InfluxDbClient.h>
+#include <InfluxDbCloud.h>
 
 //flags systeme
 bool criticalError = false;
 
 //flash
 Preferences prefs;
+
+//influxDB
+#define INFLUXDB_URL "https://us-east-1-1.aws.cloud2.influxdata.com"
+#define INFLUXDB_TOKEN "P-XKFBBsabdrrz6JTpTMCTRgBIhvIcKQ2_bM9OfujZ7qn-Eo1fvZDOpx9zOarQtTL-KAlQDnRNWM1vsuwkO2dA=="
+#define INFLUXDB_ORG "b42d947af9eaac69"
+#define INFLUXDB_BUCKET "Weight_test"
+InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Point weight_DB("wifi_status");
 
 //balance 
 // conversion speeds ((Continuous) Samples Per Second)
@@ -999,6 +1009,20 @@ void setup()
   Serial.print(return2digits(alarmSet2.Second));
   Serial.println();
 
+  //----------------------------------------------------InfluxDB
+  // Check server connection
+    if (client.validateConnection()) {
+      Serial.print("Connected to InfluxDB: ");
+      Serial.println(client.getServerUrl());
+    } else {
+      Serial.print("InfluxDB connection failed: ");
+      Serial.println(client.getLastErrorMessage());
+    }
+
+    // Add tags to the data point
+    weight_DB.addTag("device", "CATFEEDER");
+    weight_DB.addTag("SSID", WiFi.SSID());
+
   //----------------------------------------------------Balance                      //délais??????????
   pinMode(33, OUTPUT); // set the SS pin as an output
   SPI.begin();
@@ -1118,6 +1142,25 @@ void setup()
 
 void loop()
 {
+
+  // Clear fields for reusing the point. Tags will remain the same as set above.
+  weight_DB.clearFields();
+
+  // Store measured value into point
+  // Report RSSI of currently connected network
+  weight_DB.addField("rssi", WiFi.RSSI());
+
+  // Print what are we exactly writing
+  Serial.print("Writing: ");
+  Serial.println(weight_DB.toLineProtocol());
+
+  // Write point
+  if (!client.writePoint(weight_DB)) {
+    Serial.print("InfluxDB write failed: ");
+    Serial.println(client.getLastErrorMessage());
+  }
+
+
   if(readBattery && WifiSTA){
     batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
     Serial.print("batDis: ");
