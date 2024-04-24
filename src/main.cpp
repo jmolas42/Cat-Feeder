@@ -396,6 +396,7 @@ void connectWiFi()
   }
   else{
     Serial.println("Unable to connect to WiFi");
+    wifiConnected = false;
   }
 }
 
@@ -1574,6 +1575,7 @@ void stateMachineComm(){
           startCapProx();
         }
         else if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address != tagID){ //balise recu, mais pas accepté
+          IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
           setRGB(178,34,34);
           delay(200);
           setRGB(0,0,0);
