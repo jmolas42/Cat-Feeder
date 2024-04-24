@@ -72,8 +72,8 @@ float const calibration = 10.436;  //bits par gramme
 
 //WiFi
 bool wifiConnected = false;
-String ssid     = "Test";
-String password = "test1234";
+String ssid     = "SSID";
+String password = "password";
 DNSServer dnsServer;
 AsyncWebServer server(80);
 bool WifiCredentialsSet = false;
@@ -1037,10 +1037,14 @@ void setup()
   prefs.putInt("weight_ADC", 0);
 
 
-  ssid = prefs.getString("ssid", "Test");
+  ssid = prefs.getString("ssid", "SSID");
   Serial.println("SSID : " + ssid);
-  password = prefs.getString("password", "test1234");
+  password = prefs.getString("password", "password");
   Serial.println("password : " + password);
+  if(!prefs.getBool("wifiInitialized", false)){
+    startBroadcast = true;
+    Serial.println("wifi not initialized");
+  }
   timezoneIndex = prefs.getInt("timezoneIndex", 12);
   Serial.println("timezoneIndex : " + (String)timezoneIndex);
   timeFeeding1 = prefs.getString("timeFeeding1", "08:00");
@@ -1351,7 +1355,7 @@ void loop()
     batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
     Serial.print("batDis: ");
     Serial.println(batDis);
-    if(batDis < 30){
+    if(batDis < 76){ //30%
       lowBattery = true;
     }
     else{
@@ -1468,6 +1472,37 @@ void loop()
       u8g2.drawXBMP(76, 0, 103, 64, logo);
       u8g2.sendBuffer();
       connectWiFi();
+      bool timeGood = true;
+      if(WiFi.status() == WL_CONNECTED){
+      Offset_sec = timeZoneOffsets[timezoneIndex]*60*60;
+      configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
+      struct tm timeinfo;
+      if(!getLocalTime(&timeinfo)){
+        Serial.println("Failed to obtain time");
+        timeGood = getLocalTime(&timeinfo);
+        Serial.println("Failed to obtain time again!");
+      }else if(timeGood){
+        tm.Year = timeinfo.tm_year - 70;
+        tm.Month = timeinfo.tm_mon + 1;
+        tm.Day = timeinfo.tm_mday;
+        tm.Hour = timeinfo.tm_hour;
+        tm.Minute = timeinfo.tm_min;
+        tm.Second = timeinfo.tm_sec;
+      }
+      Serial.print(tm.Hour);
+      Serial.print(tm.Minute);
+      Serial.println(tm.Second);
+
+      RTC.set(makeTime(tm), CLOCK_ADDRESS);
+      
+      Serial.print("DS1337 configured Hour=");
+      Serial.print(tm.Hour);
+      Serial.print(", Minutes=");
+      Serial.println(tm.Minute);
+    }
+    if(WifiCredentialsSet){
+      prefs.putBool("wifiInitialized", true);
+    }
       WifiSTA = true;
       WifiCredentialsSet = false;
       setRGB(0, 0, 0);
@@ -1496,10 +1531,9 @@ void stateMachineComm(){
         Serial.println("mm");
         setRGB(255,255,255); //blanc
         stateComm = TX_COMM; 
-        digitalWrite(PIN_XSHUT_DIST, LOW);       
+        digitalWrite(PIN_XSHUT_DIST, LOW); //ferme capteur de distance 
         counterTXUptime = 0;
         millisCommIR = millis(); 
-
         tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
       }
       break;
@@ -1537,6 +1571,18 @@ void stateMachineComm(){
           doorOpenedByCat = true;
           counterDoorOpenCatLeft = 0;
           stateComm = CAT_EATING;
+          startCapProx();
+        }
+        else if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address != tagID){ //balise recu, mais pas accepté
+          setRGB(178,34,34);
+          delay(200);
+          setRGB(0,0,0);
+          delay(150);
+          setRGB(178,34,34);
+          delay(200);
+          setRGB(0,0,0);
+          stateComm = STANDBY;
+          IrReceiver.resume(); // Important, enables to receive the next IR signal
           startCapProx();
         }
         else{
