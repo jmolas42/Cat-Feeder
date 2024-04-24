@@ -84,15 +84,38 @@ bool startBroadcast = false;
 
 //Time & RTC
 String hourNow = "00:00";
+String hourNew = "00:00";
 int RTCTimeHour = 0;
 int RTCTimeMinutes =  0;
 int RTCTimeSeconds = 0; 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 0;
-const int   Offset_sec = -14400; //-4h
+int   Offset_sec = -14400; //-4h
 tmElements_t tm;
 bool alarmRTC = false;
 bool updateTimeFlag = false;
+bool timeChanged = false; //si hourNew doit updater hourNow
+int timezoneIndex = 12;
+String timeZoneNames[] = {
+      "UTC-12:00", "UTC-11:30", "UTC-11:00", "UTC-10:30", "UTC-10:00",
+      "UTC-09:30", "UTC-09:00", "UTC-08:30", "UTC-08:00", "UTC-07:00",
+      "UTC-06:00", "UTC-05:00", "UTC-04:00", "UTC-03:30", "UTC-03:00",
+      "UTC-02:00", "UTC-01:00", "UTC+00:00", "UTC+01:00", "UTC+02:00",
+      "UTC+03:00", "UTC+03:30", "UTC+04:00", "UTC+04:30", "UTC+05:00",
+      "UTC+05:30", "UTC+05:45", "UTC+06:00", "UTC+06:30", "UTC+07:00",
+      "UTC+08:00", "UTC+08:30", "UTC+08:45", "UTC+09:00", "UTC+09:30",
+      "UTC+10:00", "UTC+10:30", "UTC+11:00", "UTC+11:30", "UTC+12:00",
+      "UTC+12:45", "UTC+13:00", "UTC+13:45", "UTC+14:00"
+};
+
+// Tableau des décalages horaires
+float timeZoneOffsets[] = {
+    -12.0f, -11.5f, -11.0f, -10.5f, -10.0f, -9.5f, -9.0f, -8.5f, -8.0f,
+    -7.0f, -6.0f, -5.0f, -4.0f, -3.5f, -3.0f, -2.0f, -1.0f, 0.0f, 1.0f,
+    2.0f, 3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 5.5f, 5.75f, 6.0f, 6.5f, 7.0f,
+    8.0f, 8.5f, 8.75f, 9.0f, 9.5f, 10.0f, 10.5f, 11.0f, 11.5f, 12.0f,
+    12.75f, 13.0f, 13.75f, 14.0f
+};
 
 //capteur de distance
 VL53L0X sensor;
@@ -143,7 +166,7 @@ bool keypad_left = false;
 bool keypad_right = false;
 bool keypad_select = false;
 long lastDebounceTime = 0;  // the last time the output pin was toggled
-long debounceDelay = 200;    // the debounce time; increase if the output flickers
+long debounceDelay = 100;    // the debounce time; increase if the output flickers
 int lastMinutes; //dernière minutes pour savoir si on rafraichi l'heure
 int timerScreenNoActivity = 0;
 bool screenON = false;
@@ -456,14 +479,18 @@ void printMenu(Menus ms){
       break;
 
     case HOUR_MENU:
+    {
       u8g2.setFont(u8g2_font_helvR14_tr);
       u8g2.drawStr(0, 17, "Fuseau horaire:");
-      u8g2.drawStr(137, 17, "-5");
+      u8g2.drawStr(137, 17, timeZoneNames[timezoneIndex].c_str());
+      u8g2.drawLine(137,18,230,18);
       u8g2.drawStr(0, 50, "Heure:");
-      u8g2.drawStr(60, 50, hourNow.c_str());
+      hourNew = hourNow;
+      u8g2.drawStr(60, 50, hourNew.c_str());
       u8g2.drawXBMP(237,47,17,17,return_icon);
       u8g2.drawFrame(236,46,20,18);
       break;
+    }
 
     case ACTIONS_MENU :   
       u8g2.setFont(u8g2_font_helvR14_tr);
@@ -607,6 +634,47 @@ void printPortionsMenuNavigation(){
     u8g2.drawXBMP(237,47,17,17,return_icon);
     u8g2.drawFrame(236,46,20,18);
   }
+  u8g2.sendBuffer();
+}
+
+void printHourMenuNavigation(){
+  u8g2.clearBuffer();
+  int row = Item_selected_row;
+  int col = Item_selected_column;
+  u8g2.setFont(u8g2_font_helvR14_tr);
+  u8g2.drawStr(0, 17, "Fuseau horaire:");
+  u8g2.drawStr(137, 17, timeZoneNames[timezoneIndex].c_str());
+  if(row == 1){
+    u8g2.drawLine(137,18,230,18);
+  }
+  u8g2.drawStr(0, 50, "Heure:");
+  u8g2.drawStr(60, 50, hourNew.c_str());
+  if(row == 2){ //sélectionner chiffre
+    switch (col)
+    {
+    case 1:
+      u8g2.drawLine(61,52,68,52);
+      break;
+    case 2:
+      u8g2.drawLine(71,52,78,52);
+      break;
+    case 3:
+      u8g2.drawLine(86,52,93,52);
+      break;
+    case 4:
+      u8g2.drawLine(96,52,103,52);
+      break;
+    default:
+      break;
+    }
+  }
+  if(row == 3){
+    u8g2.drawXBMP(237,47,17,17,return_inv_icon);
+  }else{
+    u8g2.drawXBMP(237,47,17,17,return_icon);
+    u8g2.drawFrame(236,46,20,18);
+  }
+  u8g2.drawFrame(236,46,20,18);
   u8g2.sendBuffer();
 }
 
@@ -811,6 +879,9 @@ int readDistance(){
 
 /*tourne une fois le distributeur*/
 void distribute(){
+  if(digitalRead(PIN_SWITCH_DIST) == HIGH){
+    return;
+  }
   digitalWrite(PIN_MOTOR_DIST, HIGH);
   bool next = false;
   while(!next){
@@ -911,6 +982,7 @@ void updateFeedingParameters(){
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
 }
 
+
 //prototypes
 void stateMachineComm();
 void stateMachineScreen();
@@ -935,7 +1007,7 @@ void setup()
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
 
-  prefs.putFloat("weight_g", 0);
+  prefs.putFloat("weight_g", 0);/*À ENLEVER*/
   prefs.putInt("weight_ADC", 0);
 
 
@@ -943,6 +1015,8 @@ void setup()
   Serial.println("SSID : " + ssid);
   password = prefs.getString("password", "test1234");
   Serial.println("password : " + password);
+  timezoneIndex = prefs.getInt("timezoneIndex", 12);
+  Serial.println("timezoneIndex : " + (String)timezoneIndex);
   timeFeeding1 = prefs.getString("timeFeeding1", "08:00");
   Serial.println("timeFeeding1 : " + timeFeeding1);
   nbFeeding1 = prefs.getInt("nbFeeding1", 0);
@@ -1081,6 +1155,7 @@ void setup()
   //----------------------------------------------------Time & RTC
   bool timeGood = true;
   if(WiFi.status() == WL_CONNECTED){
+    Offset_sec = timeZoneOffsets[timezoneIndex]*60*60;
     configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
@@ -1223,10 +1298,10 @@ void setup()
   if(doorOpened){
     closeDoor();
   }else{
-    myservo.attach(PIN_SERVO);
+    /*myservo.attach(PIN_SERVO);
     myservo.write(170);
     delay(200);
-    myservo.detach();                      
+    myservo.detach();*/                      
   }
 
   //lire RTC
@@ -1269,7 +1344,7 @@ void loop()
     }
 
     //lecture bouton haut bas
-    if(keypad_up && keypad_down){
+    if(digitalRead(PIN_BUT_UP) == 0 && digitalRead(PIN_BUT_DOWN) == 0){
       if(!upANDdownActivated && !startBroadcast){ //appui débuté
         upANDdownActivated = true;
         timerupANDdownActivated = 0;
@@ -1452,7 +1527,6 @@ void stateMachineComm(){
       bool prox = readCapProx();
       if(prox){ //chat encore la
         counterDoorOpenCatLeft = 0;
-        setRGB(100,100,0);
       }
       Serial.println(prox);
       if(counterDoorOpenCatLeft>=3){ //chat parti depuis 3 seconde
@@ -1669,10 +1743,101 @@ void stateMachineScreen(){
       break;
 
     case HOUR_MENU:
+      if(keypad_up){
+        if(Item_selected_row == 1){//fuseau horaire +
+          if(timezoneIndex < 43){
+            timezoneIndex++;
+            printHourMenuNavigation();
+          }
+        }
+        if(Item_selected_row == 2){//chg heure +
+          hourNew = changeTime(hourNew, 1);
+          timeChanged = true;
+          printHourMenuNavigation();
+        }
+        keypad_up = false;
+      }
+      if(keypad_down){
+        if(Item_selected_row == 1){//fuseau horaire -
+          if(timezoneIndex > 0){
+            timezoneIndex--;
+            printHourMenuNavigation();
+          }
+        }
+        if(Item_selected_row == 2){//chg heure -
+          hourNew = changeTime(hourNew, 0);
+          timeChanged = true;
+          printHourMenuNavigation();
+        }
+        keypad_down = false;
+      }
       if(keypad_select){
-        menu_selected = NAVIGATION_MENU;
-        printMenu(NAVIGATION_MENU);
-        keypad_select = false;
+        if(Item_selected_row == 1){//fuseau horaire
+          Item_selected_row++;
+          printHourMenuNavigation();
+          keypad_select = false;
+        }
+        else if(Item_selected_row == 2){//chg heure
+          if(Item_selected_column==4){
+            Item_selected_row++;
+          }
+          else{
+            Item_selected_column++;
+          }
+          printHourMenuNavigation();
+          keypad_select = false;
+        }
+        else if(Item_selected_row == 3){//retour
+          if(timeChanged){ //update RTC avec hourNew
+            Serial.println("update RTC avec hourNew");
+            hourNow = hourNew;
+            tm.Hour = (hourNow.substring(0,2)).toInt();
+            tm.Minute = (hourNow.substring(3,5)).toInt();
+            Serial.print(tm.Hour);
+            Serial.print(tm.Minute);
+            Serial.println(tm.Second);
+            RTC.set(makeTime(tm), CLOCK_ADDRESS);
+            Serial.print("DS1337 configured Hour=");
+            Serial.print(tm.Hour);
+            Serial.print(", Minutes=");
+            Serial.println(tm.Minute);
+          }else{ //update RTC avec fuseau horaire
+            if(WiFi.status() == WL_CONNECTED){
+              Serial.println("update RTC avec fuseau horaire");
+              Serial.println(timeZoneOffsets[timezoneIndex]);
+              Offset_sec = timeZoneOffsets[timezoneIndex]*60*60;
+              configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
+              struct tm timeinfo;
+              if(!getLocalTime(&timeinfo)){
+                Serial.println("Failed to obtain time");
+              }else{
+                tm.Year = timeinfo.tm_year - 70;
+                tm.Month = timeinfo.tm_mon + 1;
+                tm.Day = timeinfo.tm_mday;
+                tm.Hour = timeinfo.tm_hour;
+                tm.Minute = timeinfo.tm_min;
+                tm.Second = timeinfo.tm_sec;
+                Serial.print(tm.Hour);
+                Serial.print(tm.Minute);
+                Serial.println(tm.Second);
+                RTC.set(makeTime(tm), CLOCK_ADDRESS);
+                Serial.print("DS1337 configured Hour=");
+                Serial.print(tm.Hour);
+                Serial.print(", Minutes=");
+                Serial.println(tm.Minute);
+              }
+            }
+          }
+
+          prefs.putInt("timezoneIndex", timezoneIndex);//garde en mémoire dans tout les cas
+
+          menu_selected = NAVIGATION_MENU;
+          timeChanged = false;
+          Item_selected_column = 1;
+          Item_selected_row = 1;
+          printMenu(NAVIGATION_MENU);
+          keypad_select = false;
+        }
       }
       break;
 
@@ -1715,7 +1880,7 @@ void stateMachineScreen(){
           Item_selected_column++;
           printActionsMenuButtons(); 
         }
-        else if(Item_selected_column==2 && Item_selected_row == 3){ //retour sur ligne 3 et ligne 4
+        else if(Item_selected_column==2 || Item_selected_row == 2){ //retour sur ligne 3 et ligne 4
           Item_selected_column = 1;
           Item_selected_row = 4;
           printActionsMenuButtons(); 
@@ -1729,31 +1894,35 @@ void stateMachineScreen(){
           doorOpenedByManually = true;
           setRGB(0,0,255);
           Serial.println("door opened manually");
+          keypad_select = false;
         }
         if(Item_selected_row == 1 && Item_selected_column == 2){ //fermer porte
           closeDoor();
           doorOpenedByManually = false;
           setRGB(0,0,0);
           Serial.println("door closed manually");
+          keypad_select = false;
         }
         if(Item_selected_row == 2){ //délivrer portion
           distribute();
+          keypad_select = false;
           updateWeight();
           Serial.println("delivery done");
         }
         if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
-
+          keypad_select = false;
         }
         if(Item_selected_row == 3 && Item_selected_column == 2){ //reset balise
-
+          keypad_select = false;
         }
         if(Item_selected_row == 4 && Item_selected_column == 1){ //retour menu navigation
           menu_selected = NAVIGATION_MENU;
           printMenu(NAVIGATION_MENU);
           Item_selected_column = 1;
           Item_selected_row = 1;
+          keypad_select = false;  
         }
-        keypad_select = false;
+
       }
       break;
 
