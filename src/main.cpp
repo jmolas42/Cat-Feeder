@@ -1388,32 +1388,6 @@ void loop()
       upANDdownActivated = false;
     }
 
-    //start AP
-    if (startBroadcast)
-    {
-      WifiSTA = false;
-      Serial.println();
-      Serial.println("Setting up AP Mode");
-      WiFi.mode(WIFI_AP);
-      WiFi.softAP("CatFeeder_0001", "12345678");
-      Serial.print("AP IP address: ");
-      Serial.println(WiFi.softAPIP());
-      Serial.println("Setting up Async WebServer");
-      setupServer();
-      Serial.println("Starting DNS Server");
-      dnsServer.start(53, "*", WiFi.softAPIP());
-      server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER); // only when requested from AP
-      server.begin();
-      Serial.println("All Done!");
-      u8g2.sleepOff();
-      u8g2.clearBuffer();
-      u8g2.setFont(u8g2_font_helvR14_tr);
-      u8g2.drawStr(0, 17, "SSID: CatFeeder_0001");
-      u8g2.drawStr(0, 50, "mdp: 12345678");
-      u8g2.sendBuffer();
-      setRGB(255,140,0); //orange
-    }
-
     //Heure RTC
     if(updateTimeFlag){ //update chaque seconde
       updateTime();
@@ -1452,7 +1426,7 @@ void loop()
     }
 
     //Écran fermé
-    if(WifiSTA && timerScreenNoActivity >30 && screenON){
+    if(timerScreenNoActivity >30 && screenON){
       Serial.println("Screen turned off");
       u8g2.sleepOn();
       screenON = false;
@@ -1460,8 +1434,32 @@ void loop()
     }
 
     //Écran
-    if(WifiSTA){
-      stateMachineScreen();
+    stateMachineScreen();
+
+    //start AP broadcast
+    if (startBroadcast)
+    {
+      WifiSTA = false;
+      Serial.println();
+      Serial.println("Setting up AP Mode");
+      WiFi.mode(WIFI_AP);
+      WiFi.softAP("CatFeeder_0001", "12345678");
+      Serial.print("AP IP address: ");
+      Serial.println(WiFi.softAPIP());
+      Serial.println("Setting up Async WebServer");
+      setupServer();
+      Serial.println("Starting DNS Server");
+      dnsServer.start(53, "*", WiFi.softAPIP());
+      server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER); // only when requested from AP
+      server.begin();
+      Serial.println("All Done!");
+      u8g2.sleepOff();
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_helvR14_tr);
+      u8g2.drawStr(0, 17, "SSID: CatFeeder_0001");
+      u8g2.drawStr(0, 50, "mdp: 12345678");
+      u8g2.sendBuffer();
+      setRGB(255,140,0); //orange
     }
 
   }else{
