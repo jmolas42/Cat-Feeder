@@ -136,7 +136,7 @@ StatesComm stateComm = STANDBY;
 int counterTXUptime = 0;
 int counterRXUptime = 0;
 int millisCommIR = 0;
-int tagID = 0x12;
+int tagID = 0x00;
 
 //Portions
 int lastFeeding = 1;
@@ -172,6 +172,10 @@ int timerScreenNoActivity = 0;
 bool screenON = false;
 int powerLEDTimer = 0;
 bool powerLEDON = true;
+bool tagAddingLED = false;
+bool tagAddingLED_status = false;
+bool tagAddedLED = false;
+int tagAddedLED_counter = 0;
 
 uint8_t RGB_R = 0;
 uint8_t RGB_G = 0;
@@ -224,6 +228,16 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
       readBattery = true;
     }
     if(timerSecond % 2 == 0){ //1 seconde
+      if(tagAddedLED){
+        if(tagAddedLED_counter>=2){
+          setRGB(0,0,0);
+          tagAddedLED = false;
+        }
+        else{
+          tagAddedLED_counter++;
+        }
+      }
+      
       if(upANDdownActivated){
         timerupANDdownActivated++;
       }
@@ -250,6 +264,18 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
     if(stateComm == TX_COMM){
       counterTXUptime++;
     }
+    //flash 500ms del jaune ajout balise
+    if(tagAddingLED){
+      if(tagAddingLED_status){
+        setRGB(0,0,0); //off
+        tagAddingLED_status = false;
+      }else{
+        setRGB(255,255,0); //jaune
+        tagAddingLED_status = true;
+      }
+    }
+
+    //counter de secondes
     timerSecond++;
   }
 }
@@ -1027,7 +1053,7 @@ void setup()
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
   batTag = prefs.getInt("batTag", 0);
   Serial.println("batTag : " + (String)batTag);
-  tagID = prefs.getInt("tagID", 0x12);
+  tagID = prefs.getInt("tagID", 0x00);
   Serial.println("tagID : " + (String)tagID);
   doorOpened = prefs.getBool("doorOpened", false);
   Serial.println("doorOpened : " + (String)doorOpened);
@@ -1416,7 +1442,7 @@ void loop()
     }  
 
     //Comm IR
-    if(!doorOpened || stateComm == CAT_EATING){
+    if((!doorOpened || stateComm == CAT_EATING) && !tagAddedLED){
       stateMachineComm();
     }
 
@@ -1468,7 +1494,7 @@ void stateMachineComm(){
         Serial.print("object detected at : ");
         Serial.print(dist);
         Serial.println("mm");
-        setRGB(255,255,255); //blanc    
+        setRGB(255,255,255); //blanc
         stateComm = TX_COMM; 
         digitalWrite(PIN_XSHUT_DIST, LOW);       
         counterTXUptime = 0;
@@ -1911,8 +1937,60 @@ void stateMachineScreen(){
         }
         if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
           keypad_select = false;
+          digitalWrite(PIN_XSHUT_DIST, LOW);
+          int millisLast = millis();
+          bool addOK = false;
+          tagAddingLED = true;
+          while(!addOK && !keypad_select){
+            Serial.println("on");
+            tone(PIN_IR_TX, 50);
+            millisLast = millis();
+            while(millis()-millisLast < 400 && !keypad_select){  }
+            noTone(PIN_IR_TX);
+            Serial.println("off listen");
+            millisLast = millis();
+            while(millis()-millisLast < 1000 && !keypad_select){//listen 1 sec
+              if(IrReceiver.decode()) { //décode IR recu de la balise
+              Serial.println("Received something...");
+              if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2)){ //check le protocole
+                IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
+                tagID = IrReceiver.decodedIRData.address;
+                Serial.print("new tagID: 0x");
+                Serial.println(tagID, HEX);
+                batTag = IrReceiver.decodedIRData.command;
+                prefs.putInt("batTag", batTag);
+                Serial.print("Battery level Tag : ");
+                Serial.println(batTag);
+                addOK = true;
+              }
+              else{
+                Serial.println("It's just noise!");
+              }
+              IrReceiver.resume(); // Important, enables to receive the next IR signal
+              }
+            }
+          }
+          startCapProx();
+          tagAddingLED = false;
+          tagAddingLED_status = false;
+          if(addOK){
+            setRGB(255,255,0); //jaune
+            tagAddedLED = true;
+            tagAddedLED_counter = 0;
+          }else{
+            setRGB(0,0,0);
+          }
+          timerScreenNoActivity = 0;
+          keypad_select = false;
         }
         if(Item_selected_row == 3 && Item_selected_column == 2){ //reset balise
+          tagID = 0x00;
+          prefs.putInt("tagID", tagID);
+          batTag = 0;
+          prefs.putInt("batTag", batTag);
+          setRGB(0,255,125);
+          delay(500);
+          setRGB(0,0,0);
           keypad_select = false;
         }
         if(Item_selected_row == 4 && Item_selected_column == 1){ //retour menu navigation
