@@ -197,7 +197,7 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
   interruptbool1 = true; // Indicates that the interrupt has been entered since the last time its value was changed to false
 
   if(WifiSTA){ //mdde normal
-    if(timerSecond % 60 == 0){ //1 minute
+    if(timerSecond % 300 == 0){ //5 minute
       readBattery = true;
     }
     if(timerSecond % 2 == 0){ //1 seconde
@@ -707,15 +707,44 @@ uint32_t getWeight(){
   return value;
 }
 
+
+void sendToInfluxDB(){
+  // Clear fields for reusing the point. Tags will remain the same as set above.
+  weight_DB.clearFields();
+
+  // Store measured value into point
+  // Report RSSI of currently connected network
+  weight_DB.addField("Weight_g", weight_g);
+
+  // Print what are we exactly writing
+  Serial.print("Writing: ");
+  Serial.println(weight_DB.toLineProtocol());
+
+  // Write point
+  if (!client.writePoint(weight_DB)) {
+    Serial.print("InfluxDB write failed: ");
+    Serial.println(client.getLastErrorMessage());
+  }
+}
+
 void updateWeight(){
   uint32_t w = getWeight();
-  w = w - weight_ADC; //on cherche juste la variation de l'ADC
-  weight_g = weight_g + (w/calibration); //on ajoute le nouveau nombre de gramme
+  int w_var = w - weight_ADC; //on cherche juste la variation de l'ADC
+  Serial.print("w_var: ");
+  Serial.println(w_var);
+  float weight_var_g = ((float)w_var/calibration);
+  Serial.print("weight_var_g: ");
+  Serial.println(weight_var_g);
+  weight_g += weight_var_g; //on ajoute le nouveau nombre de gramme
+  if(weight_g < 0){
+    weight_g = 0;
+  }
   weight_ADC = w; //mets a jour la derniere valeur de l'ADC
   prefs.putFloat("weight_g", weight_g);
   prefs.putInt("weight_ADC", weight_ADC);
   Serial.println("weight_g : " + (String)weight_g);
   Serial.println("weight_ADC : " + (String)weight_ADC);
+  sendToInfluxDB();
 
 }
 
@@ -749,39 +778,21 @@ void updateTime(){
 int readDistance(){
   bool ok = false;
   int dist = 0;
-  digitalWrite(PIN_XSHUT_DIST, LOW);
-  delay(20);
-  digitalWrite(PIN_XSHUT_DIST, HIGH);
-  sensor.setTimeout(500);
-  //sensor.setTimeout(0);
-  if (!sensor.init())
-  {
-    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
-      if (!sensor.init())
-    {
-    Serial.println("Failed to detect and initialize sensor! OOPS");
-    criticalError = true;
+  dist = sensor.readRangeContinuousMillimeters();
+  distances[distancesIndex] = dist;
+  if(dist>50 && dist<325){
+    int moyenne = (float)(distances[0]+distances[1]+distances[2]) / 3;
+    if(dist < moyenne + 20 && dist > moyenne - 20){ //si les 3 derniere distance sont pas trop éloigné
+      Serial.print("ALLOWED ");
+      ok = true;
+      Serial.println(dist);
     }
-  }
-  else{
-    sensor.startContinuous();
-    dist = sensor.readRangeContinuousMillimeters();
-    distances[distancesIndex] = dist;
-    if(dist>50 && dist<325){
-      int moyenne = (float)(distances[0]+distances[1]+distances[2]) / 3;
-      if(dist < moyenne + 20 && dist > moyenne - 20){ //si les 3 derniere distance sont pas trop éloigné
-        Serial.print("ALLOWED ");
-        ok = true;
-        Serial.println(dist);
-      }
-      else{
-        Serial.print("NOT ALLOWED ");
-        Serial.println(dist);
-      }
-      digitalWrite(PIN_XSHUT_DIST, LOW);
+    else{
+      Serial.print("NOT ALLOWED ");
+      Serial.println(dist);
     }
-  }
 
+  }
   if (sensor.timeoutOccurred()) { Serial.print(" TIMEOUT"); }
   if(distancesIndex<2){
     distancesIndex++;
@@ -797,24 +808,6 @@ int readDistance(){
   }
 }
 
-void sendToInfluxDB(){
-  // Clear fields for reusing the point. Tags will remain the same as set above.
-  weight_DB.clearFields();
-
-  // Store measured value into point
-  // Report RSSI of currently connected network
-  weight_DB.addField("Weight_g", weight_g);
-
-  // Print what are we exactly writing
-  Serial.print("Writing: ");
-  Serial.println(weight_DB.toLineProtocol());
-
-  // Write point
-  if (!client.writePoint(weight_DB)) {
-    Serial.print("InfluxDB write failed: ");
-    Serial.println(client.getLastErrorMessage());
-  }
-}
 
 /*tourne une fois le distributeur*/
 void distribute(){
@@ -872,6 +865,31 @@ bool readCapProx(){
   return(capProx);
 }
 
+void startCapProx(){
+  digitalWrite(PIN_XSHUT_DIST, HIGH);
+  bool ok = false;
+  sensor.setTimeout(500);
+  //sensor.setTimeout(0);
+  if (!sensor.init())
+  {
+    Serial.println("Failed to detect and initialize sensor! Lets try once more...");
+      if (!sensor.init())
+    {
+    Serial.println("Failed to detect and initialize sensor! OOPS");
+    criticalError = true;
+    }
+    else{
+      ok = true;
+    }
+  }
+  else{
+    ok= true;
+  }
+  if(ok){
+    sensor.startContinuous();
+  }
+}
+
 /*configure la flash et le RTC pour la distribution*/
 void updateFeedingParameters(){
   prefs.putString("timeFeeding1", timeFeeding1); //update flash
@@ -893,18 +911,15 @@ void updateFeedingParameters(){
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
 }
 
+//prototypes
+void stateMachineComm();
+void stateMachineScreen();
 
 void setup()
 {
   //----------------------------------------------------MONITEUR SÉRIE
   Serial.begin(115200);
-  
-  //----------------------------------------------------Timer
-  timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
-  timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
-  unsigned int timerFactor = 500000;           //500ms
-  timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
-  timerAlarmEnable(timer);
+
 
   //----------------------------------------------------RGB
   pinMode(PIN_RGB_R, OUTPUT);
@@ -916,34 +931,14 @@ void setup()
   setRGB(0,255,0); //vert
   powerLEDTimer = 0;
 
-  //----------------------------------------------------ÉCRAN
-  u8g2.begin();
-  u8g2.enableUTF8Print();
-  u8g2.clearBuffer();
-  u8g2.drawXBMP(76,0,103,64,logo);
-  u8g2.sendBuffer();
-
-  //----------------------------------------------------SPIFFS
-  if (!SPIFFS.begin())
-  {
-    Serial.println("Erreur SPIFFS...");
-    return;
-  }
-
-  File root = SPIFFS.open("/");
-  File fileSpiffs = root.openNextFile();
-
-  while (fileSpiffs) // Montre tout les fichiers dans la flash
-  {
-    Serial.print("File: ");
-    Serial.println(fileSpiffs.name());
-    fileSpiffs.close();
-    fileSpiffs = root.openNextFile();
-  }
-
   //----------------------------------------------------FLASH
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
+
+  prefs.putFloat("weight_g", 0);
+  prefs.putInt("weight_ADC", 0);
+
+
   ssid = prefs.getString("ssid", "Test");
   Serial.println("SSID : " + ssid);
   password = prefs.getString("password", "test1234");
@@ -967,17 +962,132 @@ void setup()
   weight_ADC = prefs.getInt("weight_ADC", 0);
   Serial.println("weight_ADC : " + (String)weight_ADC);
 
+  
+
+  //----------------------------------------------------Balance
+  pinMode(33, OUTPUT); // set the SS pin as an output
+  SPI.begin();
+  SPI.setFrequency(100000);
+  digitalWrite(33, LOW);            // set the SS pin to LOW
+  uint8_t cmds = 0x90; //0x48
+  SPI.transfer(cmds);
+  digitalWrite(33, HIGH); 
+
+  delay(500);
+
+  //Buffer and unipolar
+  digitalWrite(33, LOW);
+  uint8_t cmd = (MAX_CMD_REG | MAX_CTRL1) | MAX_WRITE;
+  uint8_t ctrl = 0b01011000; 
+  SPI.transfer(cmd);
+  SPI.transfer(ctrl);
+  digitalWrite(33, HIGH);
+
+  delay(500);
+
+  //gain and Self-calibration
+  digitalWrite(33, LOW);
+  uint8_t cmdg = (MAX_CMD_REG | MAX_CTRL3) | MAX_WRITE;
+  uint8_t ctrlg = 0b11111000; 
+  SPI.transfer(cmdg);
+  SPI.transfer(ctrlg);
+  digitalWrite(33, HIGH);
+
+  delay(500);
+
+
+  //Conv
+  digitalWrite(33, LOW);            // set the SS pin to LOW
+  uint8_t cmd0 = MAX_CMD_CONV | MAX_SPS_10; //rate 0 (base)
+  SPI.transfer(cmd0);
+  digitalWrite(33, HIGH); 
+
+  delay(500);
+
+  //Make sure its fine by reading CTRL1
+  digitalWrite(33, LOW);           // set the SS pin HIGH
+  uint8_t cmd2 = (MAX_CMD_REG | MAX_CTRL1) | MAX_READ;
+  SPI.transfer(cmd2);             // send a write command to the MCP4131 to write at registry address 0x00
+  uint8_t val = SPI.transfer(0);
+  Serial.println("val : " + (String)val);
+  digitalWrite(33, HIGH);           // set the SS pin HIGH
+  delay(500);
+
+  if(weight_ADC == 0){//initialisation de weight_ADC
+    //read ADC 6 times
+    uint32_t value = 0;
+    for(int i = 0; i<2; i++){
+      digitalWrite(33, LOW);           // set the SS pin HIGH
+      uint8_t cmd = (MAX_CMD_REG | MAX_DATA) | MAX_READ;
+      SPI.transfer(cmd);             // send a write command to the MCP4131 to write at registry address 0x00
+      uint8_t valMSB = SPI.transfer(0);
+      uint8_t valLSB = SPI.transfer(0);
+      uint8_t valLLSB = SPI.transfer(0);
+      //printf("valMSB : 0x%X\r\n", valMSB);
+      //printf("valLSB : 0x%X\r\n", valLSB);
+      value += ((valMSB<<16)|(valLSB<<8)|valLLSB)>>8;
+      digitalWrite(33, HIGH);           // set the SS pin HIGH
+      delay(150);
+    }
+    value = (float)value/2;
+    weight_ADC = value;
+    Serial.print("weight_ADC initialized at ");
+    Serial.println(value);
+    weight_g = 0;
+    prefs.putFloat("weight_g", weight_g);
+    Serial.println("weight_g : " + (String)weight_g);
+  }
+  SPI.end();
+  //u8g2.initInterface();
+  //u8g2.setPowerSave(0);
+  
+  //----------------------------------------------------ÉCRAN
+  u8g2.begin();
+  u8g2.enableUTF8Print();
+  u8g2.clearBuffer();
+  u8g2.drawXBMP(76,0,103,64,logo);
+  u8g2.sendBuffer();
+    
+  //----------------------------------------------------Timer
+  timer = timerBegin(0, 80, true);             // Begin timer with 1 MHz frequency (80MHz/80)
+  timerAttachInterrupt(timer, &onTimer, true); // Attach the interrupt to Timer1
+  unsigned int timerFactor = 500000;           //500ms
+  timerAlarmWrite(timer, timerFactor, true);   // Initialize the timer
+  timerAlarmEnable(timer);
+
+
+  //----------------------------------------------------SPIFFS
+  if (!SPIFFS.begin())
+  {
+    Serial.println("Erreur SPIFFS...");
+    return;
+  }
+
+  File root = SPIFFS.open("/");
+  File fileSpiffs = root.openNextFile();
+
+  while (fileSpiffs) // Montre tout les fichiers dans la flash
+  {
+    Serial.print("File: ");
+    Serial.println(fileSpiffs.name());
+    fileSpiffs.close();
+    fileSpiffs = root.openNextFile();
+  }
+
 
   //----------------------------------------------------Wi-Fi
   connectWiFi();
 
   //----------------------------------------------------Time & RTC
+  bool timeGood = true;
   if(WiFi.status() == WL_CONNECTED){
     configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
       Serial.println("Failed to obtain time");
-    }else{
+      timeGood = getLocalTime(&timeinfo);
+      Serial.println("Failed to obtain time again!");
+    }else if(timeGood){
       tm.Year = timeinfo.tm_year - 70;
       tm.Month = timeinfo.tm_mon + 1;
       tm.Day = timeinfo.tm_mday;
@@ -996,7 +1106,7 @@ void setup()
     Serial.print(", Minutes=");
     Serial.println(tm.Minute);
   }
-  else{ //pas d'internet => minuit
+  if(WiFi.status() != WL_CONNECTED || !timeGood){ //pas d'internet => minuit
     tm.Year = 2000 - 1970;
     tm.Month = 2;
     tm.Day = 1;
@@ -1060,59 +1170,7 @@ void setup()
     // Add tags to the data point
     weight_DB.addTag("device", "CatFeeder_0001");
 
-  //----------------------------------------------------Balance                      //délais??????????
-  pinMode(33, OUTPUT); // set the SS pin as an output
-  SPI.begin();
-
-  digitalWrite(33, LOW);            // set the SS pin to LOW
-  uint8_t cmds = 0x90; //0x48
-  SPI.transfer(cmds);
-  digitalWrite(33, HIGH); 
-
-  delay(1000);
-
-  //Buffer and unipolar
-  digitalWrite(33, LOW);
-  uint8_t cmd = (MAX_CMD_REG | MAX_CTRL1) | MAX_WRITE;
-  uint8_t ctrl = 0b01011000; 
-  SPI.transfer(cmd);
-  SPI.transfer(ctrl);
-  digitalWrite(33, HIGH);
-
-  delay(500);
-
-  //gain and Self-calibration
-  digitalWrite(33, LOW);
-  uint8_t cmdg = (MAX_CMD_REG | MAX_CTRL3) | MAX_WRITE;
-  uint8_t ctrlg = 0b11111000; 
-  SPI.transfer(cmdg);
-  SPI.transfer(ctrlg);
-  digitalWrite(33, HIGH);
-
-  delay(500);
-
-
-  //Conv
-  digitalWrite(33, LOW);            // set the SS pin to LOW
-  uint8_t cmd0 = MAX_CMD_CONV | MAX_SPS_10; //rate 0 (base)
-  SPI.transfer(cmd0);
-  digitalWrite(33, HIGH); 
-
-  delay(500);
-
-  //Make sure its fine by reading CTRL1
-  digitalWrite(33, LOW);           // set the SS pin HIGH
-  uint8_t cmd2 = (MAX_CMD_REG | MAX_CTRL1) | MAX_READ;
-  SPI.transfer(cmd2);             // send a write command to the MCP4131 to write at registry address 0x00
-  uint8_t val = SPI.transfer(0);
-  Serial.println("val : " + (String)val);
-  digitalWrite(33, HIGH);           // set the SS pin HIGH
-
-  delay(50);
-
-  SPI.end();
-  u8g2.initInterface();
-  u8g2.setPowerSave(0);
+  
 
 
   //-----------------------------------------------------BOUTONS
@@ -1144,6 +1202,7 @@ void setup()
   pinMode(PIN_OUT_PROX_1, INPUT);
   pinMode(PIN_OUT_PROX_2, INPUT);
   pinMode(PIN_IN_PROX, OUTPUT);
+  startCapProx();
 
   //-----------------------------------------------------Distribution
   pinMode(PIN_MOTOR_DIST, OUTPUT);
@@ -1163,6 +1222,11 @@ void setup()
   //porte
   if(doorOpened){
     closeDoor();
+  }else{
+    myservo.attach(PIN_SERVO);
+    myservo.write(170);
+    delay(200);
+    myservo.detach();                      
   }
 
   //lire RTC
@@ -1180,9 +1244,9 @@ void setup()
 void loop()
 {
 
-
-
-  if(readBattery && WifiSTA){
+  if(WifiSTA){
+    //battery ADC
+    if(readBattery){
     batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
     Serial.print("batDis: ");
     Serial.println(batDis);
@@ -1193,60 +1257,109 @@ void loop()
       lowBattery = false;
     }
     readBattery = false;
-  }
-
-
-  if(lowBattery && timerLowBattery >= 300 && !(RGB_R==255 && RGB_G==0 && RGB_B==0)){//allume RGB rouge si batterie vide au 5 minute
-    setRGB(255,0,0);
-    Serial.println("Open RGB low battery");
-  }
-  if(lowBattery && timerLowBattery >= 305 && (RGB_R==255 && RGB_G==0 && RGB_B==0)){//5 seconde plus tard on remets la led
-    setRGBlast();
-    timerLowBattery = 0;
-    Serial.println("Close RGB low battery");
-  }
-
-  if(digitalRead(PIN_BUT_UP) == LOW && digitalRead(PIN_BUT_DOWN) == LOW){
-    if(!upANDdownActivated && !startBroadcast){ //appui débuté
-      upANDdownActivated = true;
-      timerupANDdownActivated = 0;
     }
-    if(upANDdownActivated && timerupANDdownActivated >= 3){ //appui fin 3 sec
-      startBroadcast = true;
+    if(lowBattery && timerLowBattery >= 300 && !(RGB_R==255 && RGB_G==0 && RGB_B==0)){//allume RGB rouge si batterie vide au 5 minute
+      setRGB(255,0,0);
+      Serial.println("Open RGB low battery");
+    }
+    if(lowBattery && timerLowBattery >= 305 && (RGB_R==255 && RGB_G==0 && RGB_B==0)){//5 seconde plus tard on remets la led
+      setRGBlast();
+      timerLowBattery = 0;
+      Serial.println("Close RGB low battery");
+    }
+
+    //lecture bouton haut bas
+    if(keypad_up && keypad_down){
+      if(!upANDdownActivated && !startBroadcast){ //appui débuté
+        upANDdownActivated = true;
+        timerupANDdownActivated = 0;
+      }
+      if(upANDdownActivated && timerupANDdownActivated >= 3){ //appui fin 3 sec
+        startBroadcast = true;
+        upANDdownActivated = false;
+      }
+    }else if(upANDdownActivated){ //appui arreté avant fin
       upANDdownActivated = false;
     }
-  }else if(upANDdownActivated){ //appui arreté avant fin
-    upANDdownActivated = false;
-  }
 
-  if (startBroadcast && WifiSTA)
-  {
-    WifiSTA = false;
-    Serial.println();
-    Serial.println("Setting up AP Mode");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("CatFeeder_0001", "12345678");
-    Serial.print("AP IP address: ");
-    Serial.println(WiFi.softAPIP());
-    Serial.println("Setting up Async WebServer");
-    setupServer();
-    Serial.println("Starting DNS Server");
-    dnsServer.start(53, "*", WiFi.softAPIP());
-    server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER); // only when requested from AP
-    server.begin();
-    Serial.println("All Done!");
-    u8g2.sleepOff();
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_helvR14_tr);
-    u8g2.drawStr(0, 17, "SSID: CatFeeder_0001");
-    u8g2.drawStr(0, 50, "mdp: 12345678");
-    u8g2.sendBuffer();
-    setRGB(255,140,0); //orange
-  }
+    //start AP
+    if (startBroadcast)
+    {
+      WifiSTA = false;
+      Serial.println();
+      Serial.println("Setting up AP Mode");
+      WiFi.mode(WIFI_AP);
+      WiFi.softAP("CatFeeder_0001", "12345678");
+      Serial.print("AP IP address: ");
+      Serial.println(WiFi.softAPIP());
+      Serial.println("Setting up Async WebServer");
+      setupServer();
+      Serial.println("Starting DNS Server");
+      dnsServer.start(53, "*", WiFi.softAPIP());
+      server.addHandler(new CaptiveRequestHandler()).setFilter(ON_AP_FILTER); // only when requested from AP
+      server.begin();
+      Serial.println("All Done!");
+      u8g2.sleepOff();
+      u8g2.clearBuffer();
+      u8g2.setFont(u8g2_font_helvR14_tr);
+      u8g2.drawStr(0, 17, "SSID: CatFeeder_0001");
+      u8g2.drawStr(0, 50, "mdp: 12345678");
+      u8g2.sendBuffer();
+      setRGB(255,140,0); //orange
+    }
 
-  // Access point
-  if (WiFi.getMode() == WIFI_AP)
-  {
+    //Heure RTC
+    if(updateTimeFlag){ //update chaque seconde
+      updateTime();
+      updateTimeFlag = false;
+    }
+    if(alarmRTC){
+      Serial.println("ALARM!!!!");
+      alarmRTC = false;
+      RTC.resetAlarms();
+      int nbFeeding = 0;
+      String h = hourNow.substring(0,2);
+      if(h==timeFeeding1.substring(0,2)){ //hours ok
+        int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
+        int mF = timeFeeding1.substring(3,5).toInt();
+        if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
+          nbFeeding = nbFeeding1;
+        }
+      }
+      else if(h==timeFeeding2.substring(0,2)){ //hours ok
+        int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
+        int mF = timeFeeding2.substring(3,5).toInt();
+        if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
+          nbFeeding = nbFeeding2;
+        }
+      }
+      
+      for(int i=0; i<nbFeeding; i++){
+        distribute();
+      }
+      updateWeight();
+    }  
+
+    //Comm IR
+    if(!doorOpened || stateComm == CAT_EATING){
+      stateMachineComm();
+    }
+
+    //Écran fermé
+    if(WifiSTA && timerScreenNoActivity >30 && screenON){
+      Serial.println("Screen turned off");
+      u8g2.sleepOn();
+      screenON = false;
+      menu_selected = SCREEN_OFF;
+    }
+
+    //Écran
+    if(WifiSTA){
+      stateMachineScreen();
+    }
+
+  }else{
+    // Access point
     dnsServer.processNextRequest();
     if (WifiCredentialsSet || digitalRead(PIN_BUT_SELECT) == LOW)
     {
@@ -1269,10 +1382,10 @@ void loop()
       timerScreenNoActivity = 0;
     }
   }
+}
 
-  //Comm IR
-  if(WifiSTA && (!doorOpened || stateComm == CAT_EATING)){
-    switch (stateComm){
+void stateMachineComm(){
+  switch (stateComm){
     case STANDBY :
     {
       int dist = readDistance();
@@ -1281,9 +1394,11 @@ void loop()
         Serial.print(dist);
         Serial.println("mm");
         setRGB(255,255,255); //blanc    
-        stateComm = TX_COMM;        
+        stateComm = TX_COMM; 
+        digitalWrite(PIN_XSHUT_DIST, LOW);       
         counterTXUptime = 0;
         millisCommIR = millis(); 
+
         tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
       }
       break;
@@ -1305,6 +1420,7 @@ void loop()
         setRGB(0,0,0); //ferme RGB    
         stateComm = STANDBY;
         IrReceiver.resume(); // Important, enables to receive the next IR signal
+        startCapProx();
       }
       if(IrReceiver.decode()) { //décode IR recu de la balise
         Serial.println("Received something...");
@@ -1320,6 +1436,7 @@ void loop()
           doorOpenedByCat = true;
           counterDoorOpenCatLeft = 0;
           stateComm = CAT_EATING;
+          startCapProx();
         }
         else{
           Serial.println("It's just noise!");
@@ -1339,6 +1456,7 @@ void loop()
       }
       Serial.println(prox);
       if(counterDoorOpenCatLeft>=3){ //chat parti depuis 3 seconde
+
         closeDoor();
         setRGB(0,0,0);
         doorOpenedByCat = false;
@@ -1354,50 +1472,9 @@ void loop()
       break;
     }
     }
-  }
+}
 
-
-  //Heure RTC
-  if(WifiSTA && updateTimeFlag){ //update chaque seconde
-    updateTime();
-    updateTimeFlag = false;
-  }
-  if(WifiSTA && alarmRTC){
-    Serial.println("ALARM!!!!");
-    alarmRTC = false;
-    RTC.resetAlarms();
-    int nbFeeding = 0;
-    String h = hourNow.substring(0,2);
-    if(h==timeFeeding1.substring(0,2)){ //hours ok
-      int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
-      int mF = timeFeeding1.substring(3,5).toInt();
-      if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
-        nbFeeding = nbFeeding1;
-      }
-    }
-    else if(h==timeFeeding2.substring(0,2)){ //hours ok
-      int mH = hourNow.substring(3,5).toInt(); //check minutes (décalage possible)
-      int mF = timeFeeding2.substring(3,5).toInt();
-      if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
-        nbFeeding = nbFeeding2;
-      }
-    }
-    
-    for(int i=0; i<nbFeeding; i++){
-      distribute();
-    }
-  }
-
-
-  if(WifiSTA && timerScreenNoActivity >30 && screenON){
-    Serial.println("Screen turned off");
-    u8g2.sleepOn();
-    screenON = false;
-    menu_selected = SCREEN_OFF;
-  }
-
-
-  if(WifiSTA){
+void stateMachineScreen(){
   switch(menu_selected){
     case SCREEN_OFF :
       if(keypad_select){
@@ -1406,6 +1483,8 @@ void loop()
         screenON = true;
         timerScreenNoActivity=0;
         menu_selected = MAIN_MENU;
+        Item_selected_column = 1;
+        Item_selected_row = 1;
         printMenu(menu_selected);
         keypad_select = false;
       }
@@ -1659,6 +1738,7 @@ void loop()
         }
         if(Item_selected_row == 2){ //délivrer portion
           distribute();
+          updateWeight();
           Serial.println("delivery done");
         }
         if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
@@ -1680,6 +1760,4 @@ void loop()
     default : 
       break;
   }
-  }
-
 }
