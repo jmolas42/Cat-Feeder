@@ -29,7 +29,7 @@ Preferences prefs;
 #define INFLUXDB_URL "https://us-east-1-1.aws.cloud2.influxdata.com"
 #define INFLUXDB_TOKEN "P-XKFBBsabdrrz6JTpTMCTRgBIhvIcKQ2_bM9OfujZ7qn-Eo1fvZDOpx9zOarQtTL-KAlQDnRNWM1vsuwkO2dA=="
 #define INFLUXDB_ORG "b42d947af9eaac69"
-#define INFLUXDB_BUCKET "Weight_test"
+#define INFLUXDB_BUCKET "Weight_real"
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Point weight_DB("weight");
 
@@ -68,7 +68,7 @@ Point weight_DB("weight");
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 float weight_g = 0;
 int weight_ADC = 0;
-float const calibration = 10.436;  //bits par gramme
+float const calibration = 10.56;  //bits par gramme
 
 //WiFi
 bool wifiConnected = false;
@@ -1034,8 +1034,8 @@ void setup()
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
 
-  prefs.putFloat("weight_g", 0);/*À ENLEVER*/
-  prefs.putInt("weight_ADC", 0);
+  //prefs.putFloat("weight_g", 0);/*À ENLEVER*/
+ //prefs.putInt("weight_ADC", 0);
 
 
   ssid = prefs.getString("ssid", "SSID");
@@ -1530,7 +1530,7 @@ void stateMachineComm(){
         Serial.println("mm");
         setRGB(255,255,255); //blanc
         stateComm = TX_COMM; 
-        digitalWrite(PIN_XSHUT_DIST, LOW); //ferme capteur de distance 
+        sensor.stopContinuous();//ferme capteur de distance 
         counterTXUptime = 0;
         millisCommIR = millis(); 
         tone(PIN_IR_TX, 50); //DEL IR TX 50hz 
@@ -1554,7 +1554,7 @@ void stateMachineComm(){
         setRGB(0,0,0); //ferme RGB    
         stateComm = STANDBY;
         IrReceiver.resume(); // Important, enables to receive the next IR signal
-        startCapProx();
+        sensor.startContinuous();
       }
       if(IrReceiver.decode()) { //décode IR recu de la balise
         Serial.println("Received something...");
@@ -1570,7 +1570,7 @@ void stateMachineComm(){
           doorOpenedByCat = true;
           counterDoorOpenCatLeft = 0;
           stateComm = CAT_EATING;
-          startCapProx();
+          sensor.startContinuous();
         }
         else if((IrReceiver.decodedIRData.protocol == NEC || IrReceiver.decodedIRData.protocol == NEC2) && IrReceiver.decodedIRData.address != tagID){ //balise recu, mais pas accepté
           IrReceiver.printIRResultShort(&Serial); // imprime donnée IR recu
@@ -1582,8 +1582,8 @@ void stateMachineComm(){
           delay(200);
           setRGB(0,0,0);
           stateComm = STANDBY;
+          sensor.startContinuous();
           IrReceiver.resume(); // Important, enables to receive the next IR signal
-          startCapProx();
         }
         else{
           Serial.println("It's just noise!");
@@ -1602,12 +1602,12 @@ void stateMachineComm(){
       }
       Serial.println(prox);
       if(counterDoorOpenCatLeft>=3){ //chat parti depuis 3 seconde
-
+        sensor.startContinuous();
         closeDoor();
+        updateWeight();
         setRGB(0,0,0);
         doorOpenedByCat = false;
         stateComm = STANDBY;
-        updateWeight();
       }
       break;
     }
@@ -1983,7 +1983,7 @@ void stateMachineScreen(){
         }
         if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
           keypad_select = false;
-          digitalWrite(PIN_XSHUT_DIST, LOW);
+          sensor.stopContinuous();
           int millisLast = millis();
           bool addOK = false;
           tagAddingLED = true;
@@ -2016,7 +2016,7 @@ void stateMachineScreen(){
               }
             }
           }
-          startCapProx();
+          sensor.startContinuous();
           tagAddingLED = false;
           tagAddingLED_status = false;
           if(addOK){
