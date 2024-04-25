@@ -79,6 +79,8 @@ AsyncWebServer server(80);
 bool WifiCredentialsSet = false;
 bool WifiSTA = true; //configuration normale ou sinon AP pour la config
 bool upANDdownActivated = false; //si bouton hautet bas sont enfoncé
+bool upActivated = true;
+int millisupAcivated = 0;
 int timerupANDdownActivated = 0;
 bool startBroadcast = false;
 
@@ -1034,8 +1036,8 @@ void setup()
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
 
-  prefs.putFloat("weight_g", 0);/*À ENLEVER*/
-  prefs.putInt("weight_ADC", 0);
+  //prefs.putFloat("weight_g", 0);/*À ENLEVER*/
+  //prefs.putInt("weight_ADC", 0);
 
 
   ssid = prefs.getString("ssid", "SSID");
@@ -1200,7 +1202,6 @@ void setup()
       tm.Hour = timeinfo.tm_hour;
       tm.Minute = timeinfo.tm_min;
       tm.Second = timeinfo.tm_sec;
-    }
     Serial.print(tm.Hour);
     Serial.print(tm.Minute);
     Serial.println(tm.Second);
@@ -1211,6 +1212,7 @@ void setup()
     Serial.print(tm.Hour);
     Serial.print(", Minutes=");
     Serial.println(tm.Minute);
+    }
   }
   if(WiFi.status() != WL_CONNECTED || !timeGood){ //pas d'internet => minuit
     tm.Year = 2000 - 1970;
@@ -1374,8 +1376,32 @@ void loop()
       Serial.println("Close RGB low battery");
     }
 
+    //reset poids balance
+    int up = digitalRead(PIN_BUT_UP);
+    int down = digitalRead(PIN_BUT_DOWN);
+    if(up==0 && down == 1){
+      if(upActivated && (millis() - millisupAcivated) > 5000){
+        setRGB(255,150,255);
+        weight_g = 0;
+        weight_ADC = getWeight();
+        prefs.putFloat("weight_g", weight_g);
+        prefs.putInt("weight_ADC", weight_ADC);
+        sendToInfluxDB();
+        Serial.println("Weight reseted");
+        Serial.println("weight_g : " + (String)weight_g);
+        Serial.println("weight_ADC : " + (String)weight_ADC);
+        upActivated = false;
+        setRGB(0,0,0);
+      }else if(!upActivated){
+        upActivated = true;
+        millisupAcivated = millis();
+      }
+    }else{
+      upActivated = false;
+    }
+
     //lecture bouton haut bas
-    if(digitalRead(PIN_BUT_UP) == 0 && digitalRead(PIN_BUT_DOWN) == 0){
+    if(up == 0 && down == 0){
       if(!upANDdownActivated && !startBroadcast){ //appui débuté
         upANDdownActivated = true;
         timerupANDdownActivated = 0;
@@ -2003,6 +2029,7 @@ void stateMachineScreen(){
                 tagID = IrReceiver.decodedIRData.address;
                 Serial.print("new tagID: 0x");
                 Serial.println(tagID, HEX);
+                prefs.putInt("tagID", tagID);
                 batTag = IrReceiver.decodedIRData.command;
                 prefs.putInt("batTag", batTag);
                 Serial.print("Battery level Tag : ");
