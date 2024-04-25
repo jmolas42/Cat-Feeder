@@ -799,7 +799,7 @@ uint32_t getWeight(){
     //printf("valLSB : 0x%X\r\n", valLSB);
     value += ((valMSB<<16)|(valLSB<<8)|valLLSB)>>8;
     digitalWrite(33, HIGH);           // set the SS pin HIGH
-    delay(150);
+    delay(50);
   }
   value = (float)value/6;
   SPI.end();
