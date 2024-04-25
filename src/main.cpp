@@ -469,10 +469,10 @@ void printMenu(Menus ms){
         u8g2.drawXBMP(45,45,25,25,battery_full_icon);
       }
       //batterie balise
-      if(batTag == 0){ //0
+      if(batTag <= 5){ //0
         u8g2.drawXBMP(90,45,25,25,battery_empty_icon);
       }
-      else if(batTag > 0 && batTag <= 30){ //15
+      else if(batTag > 5 && batTag <= 30){ //15
         u8g2.drawXBMP(90,45,25,25,battery_low_icon);
       }
       else if(batTag > 31 && batTag <= 95){ //63
@@ -481,10 +481,10 @@ void printMenu(Menus ms){
       else if(batTag > 95 && batTag <= 159){ //127
         u8g2.drawXBMP(90,45,25,25,battery_half_icon);
       }
-      else if(batTag > 159 && batTag <= 223){ //191
+      else if(batTag > 159 && batTag <= 200){ //191
         u8g2.drawXBMP(90,45,25,25,battery_three_quarter_icon);
       }
-      else if(batTag > 223 && batTag <= 255){ //255
+      else if(batTag > 200 && batTag <= 255){ //255
         u8g2.drawXBMP(90,45,25,25,battery_full_icon);
       }
       u8g2.setFont(u8g2_font_luBS12_tf);
@@ -1381,7 +1381,7 @@ void loop()
     int down = digitalRead(PIN_BUT_DOWN);
     if(up==0 && down == 1){
       if(upActivated && (millis() - millisupAcivated) > 5000){
-        setRGB(255,150,255);
+        setRGB(255,125,255); //rose pale
         weight_g = 0;
         weight_ADC = getWeight();
         prefs.putFloat("weight_g", weight_g);
