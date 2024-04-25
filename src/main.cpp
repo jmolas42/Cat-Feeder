@@ -1455,6 +1455,7 @@ void loop()
       
       for(int i=0; i<nbFeeding; i++){
         distribute();
+        delay(100);
       }
       weightToBeUpdated = true;
     }  
