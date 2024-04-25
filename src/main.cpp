@@ -1034,8 +1034,8 @@ void setup()
   Serial.println("Reading flash...");
   prefs.begin("cat-feeder", false);
 
-  //prefs.putFloat("weight_g", 0);/*À ENLEVER*/
- //prefs.putInt("weight_ADC", 0);
+  prefs.putFloat("weight_g", 0);/*À ENLEVER*/
+  prefs.putInt("weight_ADC", 0);
 
 
   ssid = prefs.getString("ssid", "SSID");
@@ -1072,7 +1072,7 @@ void setup()
   //----------------------------------------------------Balance
   pinMode(33, OUTPUT); // set the SS pin as an output
   SPI.begin();
-  SPI.setFrequency(100000);
+  //SPI.setFrequency(100000);
   digitalWrite(33, LOW);            // set the SS pin to LOW
   uint8_t cmds = 0x90; //0x48
   SPI.transfer(cmds);
