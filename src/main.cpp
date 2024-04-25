@@ -69,6 +69,8 @@ Point weight_DB("weight");
 float weight_g = 0;
 int weight_ADC = 0;
 float const calibration = 10.56;  //bits par gramme
+bool weightToBeUpdated = false;
+int weightToBeUpdated_counter = 0;
 
 //WiFi
 bool wifiConnected = false;
@@ -238,6 +240,10 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
         else{
           tagAddedLED_counter++;
         }
+      }
+
+      if(weightToBeUpdated){
+        weightToBeUpdated_counter++;
       }
       
       if(upANDdownActivated){
@@ -1376,6 +1382,13 @@ void loop()
       Serial.println("Close RGB low battery");
     }
 
+    //update poids 
+    if(weightToBeUpdated && weightToBeUpdated_counter >2){
+      weightToBeUpdated = false;
+      weightToBeUpdated_counter = 0;
+      updateWeight();
+    }
+
     //reset poids balance
     int up = digitalRead(PIN_BUT_UP);
     int down = digitalRead(PIN_BUT_DOWN);
@@ -1443,7 +1456,7 @@ void loop()
       for(int i=0; i<nbFeeding; i++){
         distribute();
       }
-      updateWeight();
+      weightToBeUpdated = true;
     }  
 
     //Comm IR
@@ -1630,7 +1643,7 @@ void stateMachineComm(){
       if(counterDoorOpenCatLeft>=3){ //chat parti depuis 3 seconde
         sensor.startContinuous();
         closeDoor();
-        updateWeight();
+        weightToBeUpdated = true;
         setRGB(0,0,0);
         doorOpenedByCat = false;
         stateComm = STANDBY;
@@ -2004,7 +2017,7 @@ void stateMachineScreen(){
         if(Item_selected_row == 2){ //délivrer portion
           distribute();
           keypad_select = false;
-          updateWeight();
+          weightToBeUpdated = true;
           Serial.println("delivery done");
         }
         if(Item_selected_row == 3 && Item_selected_column == 1){ //ajouter balise
