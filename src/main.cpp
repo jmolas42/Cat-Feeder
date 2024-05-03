@@ -74,6 +74,7 @@ int weightToBeUpdated_counter = 0;
 
 //WiFi
 bool wifiConnected = false;
+bool networkConnected = false;
 String ssid     = "SSID";
 String password = "password";
 DNSServer dnsServer;
@@ -85,6 +86,8 @@ bool upActivated = true;
 int millisupAcivated = 0;
 int timerupANDdownActivated = 0;
 bool startBroadcast = false;
+bool verifyNetwork = false; //a chaque minute on vérifie si on a perdu le réseau
+bool checkReconnectNetwork = false; //si on est reconnecté on se reconnecteur au temps et influxdb
 
 //Time & RTC
 String hourNow = "00:00";
@@ -230,6 +233,9 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
   if(WifiSTA){ //mdde normal
     if(timerSecond % 300 == 0){ //5 minute
       readBattery = true;
+    }
+    if(timerSecond % 60 == 0){ //minute
+      verifyNetwork = true;
     }
     if(timerSecond % 2 == 0){ //1 seconde
       if(tagAddedLED){
@@ -408,6 +414,49 @@ void connectWiFi()
   }
 }
 
+void reconnectNetwork(){
+  //----------------------------------------------------Time & RTC
+  bool timeGood = true;
+  if(WiFi.status() == WL_CONNECTED){
+    Offset_sec = timeZoneOffsets[timezoneIndex]*60*60;
+    configTime(gmtOffset_sec, Offset_sec, ntpServer); //récupère l'heure d'internet
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+      Serial.println("Failed to obtain time");
+      timeGood = getLocalTime(&timeinfo);
+      Serial.println("Failed to obtain time again!");
+    }else if(timeGood){
+      tm.Year = timeinfo.tm_year - 70;
+      tm.Month = timeinfo.tm_mon + 1;
+      tm.Day = timeinfo.tm_mday;
+      tm.Hour = timeinfo.tm_hour;
+      tm.Minute = timeinfo.tm_min;
+      tm.Second = timeinfo.tm_sec;
+    Serial.print(tm.Hour);
+    Serial.print(tm.Minute);
+    Serial.println(tm.Second);
+
+    RTC.set(makeTime(tm), CLOCK_ADDRESS);
+    
+    Serial.print("DS1337 configured Hour=");
+    Serial.print(tm.Hour);
+    Serial.print(", Minutes=");
+    Serial.println(tm.Minute);
+    }
+  }
+  if (client.validateConnection()) {
+    Serial.print("Connected to InfluxDB: ");
+    Serial.println(client.getServerUrl());
+    if(timeGood){ //si serveur temps et influxdb good
+      networkConnected = true;
+      Serial.println("Connected to network fully");
+    }
+  } else {
+    Serial.print("InfluxDB connection failed: ");
+    Serial.println(client.getLastErrorMessage());
+  }
+}
+
 
 String return2digits(int number) {
   String ret = "";
@@ -455,47 +504,52 @@ void printMenu(Menus ms){
       else{
         u8g2.drawXBMP(0,50,15,15,no_wifi_icon);
       }
+      if(wifiConnected && networkConnected){
+        u8g2.drawXBMP(20,50,15,15,network_icon);
+      }else{
+        u8g2.drawXBMP(20,50,15,15,no_network_icon);
+      }
       //batterie distributeur
       if(batDis <=5){ //0
-        u8g2.drawXBMP(45,45,25,25,battery_empty_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_empty_icon);
       }
       else if(batDis > 5 && batDis <= 30){ //15
-        u8g2.drawXBMP(45,45,25,25,battery_low_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_low_icon);
       }
       else if(batDis > 31 && batDis <= 95){ //63
-        u8g2.drawXBMP(45,45,25,25,battery_one_quarter_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_one_quarter_icon);
       }
       else if(batDis > 95 && batDis <= 159){ //127
-        u8g2.drawXBMP(45,45,25,25,battery_half_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_half_icon);
       }
       else if(batDis > 159 && batDis <= 223){ //191
-        u8g2.drawXBMP(45,45,25,25,battery_three_quarter_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_three_quarter_icon);
       }
       else if(batDis > 223 && batDis <= 255){ //255
-        u8g2.drawXBMP(45,45,25,25,battery_full_icon);
+        u8g2.drawXBMP(65,45,25,25,battery_full_icon);
       }
       //batterie balise
       if(batTag <= 5){ //0
-        u8g2.drawXBMP(90,45,25,25,battery_empty_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_empty_icon);
       }
       else if(batTag > 5 && batTag <= 30){ //15
-        u8g2.drawXBMP(90,45,25,25,battery_low_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_low_icon);
       }
       else if(batTag > 31 && batTag <= 95){ //63
-        u8g2.drawXBMP(90,45,25,25,battery_one_quarter_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_one_quarter_icon);
       }
       else if(batTag > 95 && batTag <= 159){ //127
-        u8g2.drawXBMP(90,45,25,25,battery_half_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_half_icon);
       }
       else if(batTag > 159 && batTag <= 200){ //191
-        u8g2.drawXBMP(90,45,25,25,battery_three_quarter_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_three_quarter_icon);
       }
       else if(batTag > 200 && batTag <= 255){ //255
-        u8g2.drawXBMP(90,45,25,25,battery_full_icon);
+        u8g2.drawXBMP(110,45,25,25,battery_full_icon);
       }
       u8g2.setFont(u8g2_font_luBS12_tf);
-      u8g2.drawStr(30, 63, "D");
-      u8g2.drawStr(77, 63, "B");
+      u8g2.drawStr(50, 63, "D");
+      u8g2.drawStr(97, 63, "B");
       u8g2.drawXBMP(237,47,17,17,return_icon);
       u8g2.drawFrame(236,46,20,18);
       break;
@@ -1276,6 +1330,10 @@ void setup()
     if (client.validateConnection()) {
       Serial.print("Connected to InfluxDB: ");
       Serial.println(client.getServerUrl());
+      if(timeGood){ //si serveur temps et influxdb good
+        networkConnected = true;
+        Serial.println("Connected to network fully");
+      }
     } else {
       Serial.print("InfluxDB connection failed: ");
       Serial.println(client.getLastErrorMessage());
@@ -1283,10 +1341,6 @@ void setup()
 
     // Add tags to the data point
     weight_DB.addTag("device", "CatFeeder_0001");
-
-  
-
-
   //-----------------------------------------------------BOUTONS
   pinMode(PIN_BUT_UP, INPUT);
   attachInterrupt(PIN_BUT_UP, keypadUPInterrupt, FALLING);
@@ -1359,6 +1413,35 @@ void loop()
 {
 
   if(WifiSTA){
+    //vérifier connection réseau
+    if(verifyNetwork){
+      checkReconnectNetwork = false;
+      if(WiFi.status() != WL_CONNECTED ){//si on  est plus connecté
+        WiFi.begin(ssid.c_str(), password.c_str());
+        Serial.println("trying to reconnect to wifi...");
+        if(wifiConnected && menu_selected == MAIN_MENU){ //on était connecté au wifi avant et on est sur la page d'accueil 
+          wifiConnected = false;
+          networkConnected = false;
+          printMenu(menu_selected);
+        }
+        checkReconnectNetwork = true;
+        wifiConnected = false;
+        networkConnected = false;
+      }
+      verifyNetwork = false;
+    }
+    if(checkReconnectNetwork){
+      if(WiFi.status() == WL_CONNECTED ){//si on devient connecté
+        checkReconnectNetwork = false;
+        wifiConnected = true;
+        reconnectNetwork();
+        if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
+          printMenu(menu_selected);
+        }
+        Serial.println("Wifi recconnected!");
+      }
+    }
+
     //battery ADC
     if(readBattery){
     batDis = (float)analogRead(PIN_BATT_MON) / 4.0 ; //niveau batterie distributeur 0 à 255
