@@ -68,7 +68,7 @@ Point weight_DB("weight");
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 float weight_g = 0;
 int weight_ADC = 0;
-float const calibration = 10.56;  //bits par gramme
+float const calibration = 21.69;  //bits par gramme
 bool weightToBeUpdated = false;
 int weightToBeUpdated_counter = 0;
 
