@@ -1526,6 +1526,10 @@ void loop()
         int mF = timeFeeding1.substring(3,5).toInt();
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding1;
+          lastFeeding = nbFeeding1;
+          if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
+            printMenu(menu_selected);
+          }
         }
       }
       else if(h==timeFeeding2.substring(0,2)){ //hours ok
@@ -1533,6 +1537,10 @@ void loop()
         int mF = timeFeeding2.substring(3,5).toInt();
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding2;
+          lastFeeding = nbFeeding2;
+          if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
+            printMenu(menu_selected);
+          }
         }
       }
       
