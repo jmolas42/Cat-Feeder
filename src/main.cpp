@@ -126,7 +126,7 @@ float timeZoneOffsets[] = {
 
 //capteur de distance
 VL53L0X sensor;
-const int distanceMin = 325;
+const int distanceMin = 340;
 int distances[3] = {0,0,0};
 uint8_t distancesIndex = 0;
 
