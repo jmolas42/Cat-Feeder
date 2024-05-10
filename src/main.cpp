@@ -68,7 +68,7 @@ Point weight_DB("weight");
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 float weight_g = 0;
 int weight_ADC = 0;
-float const calibration = 21.69;  //bits par gramme
+float const calibration = 26.18;  //bits par gramme
 bool weightToBeUpdated = false;
 int weightToBeUpdated_counter = 0;
 
@@ -1118,6 +1118,8 @@ void setup()
   Serial.println("timeFeeding2 : " + timeFeeding2);
   nbFeeding2 = prefs.getInt("nbFeeding2", 0);
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
+  lastFeeding = prefs.getInt("lastFeeding", 1);
+  Serial.println("lastFeeding : " + (String)lastFeeding);
   batTag = prefs.getInt("batTag", 0);
   Serial.println("batTag : " + (String)batTag);
   tagID = prefs.getInt("tagID", 0x00);
@@ -1466,7 +1468,7 @@ void loop()
     }
 
     //update poids 
-    if(weightToBeUpdated && weightToBeUpdated_counter >2){
+    if(weightToBeUpdated && weightToBeUpdated_counter >3){
       weightToBeUpdated = false;
       weightToBeUpdated_counter = 0;
       updateWeight();
@@ -1527,6 +1529,7 @@ void loop()
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding1;
           lastFeeding = nbFeeding1;
+          prefs.putInt("lastFeeding", lastFeeding);
           if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
             printMenu(menu_selected);
           }
@@ -1538,6 +1541,7 @@ void loop()
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding2;
           lastFeeding = nbFeeding2;
+          prefs.putInt("lastFeeding", lastFeeding);
           if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
             printMenu(menu_selected);
           }
