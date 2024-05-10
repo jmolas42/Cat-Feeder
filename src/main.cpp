@@ -147,7 +147,7 @@ int tagID = 0x00;
 
 //Portions
 int lastFeeding = 1;
-int feedingPortions [2] = {0,0};
+int lastNbFeeding = 0;
 String timeFeeding1 = "08:00";
 int nbFeeding1 = 0;
 String timeFeeding2 = "17:00";
@@ -298,7 +298,6 @@ void keypadUPInterrupt(){
   if((millis() - lastDebounceTime) > debounceDelay && (menu_selected == HOUR_MENU || menu_selected == ACTIONS_MENU || menu_selected == PORTIONS_MENU)){
     keypad_up = true;
     lastDebounceTime = millis();
-    timerScreenNoActivity = 0;
   }
 }
 
@@ -496,8 +495,8 @@ void printMenu(Menus ms){
       u8g2.setFont(u8g2_font_logisoso30_tf);
       u8g2.drawStr(0, 40, hourNow.c_str());   
       u8g2.setFont(u8g2_font_logisoso16_tf);
-      u8g2.drawStr(140, 20, ("Repas:   " + (String)lastFeeding).c_str());        
-      u8g2.drawStr(140, 40, ("Portions: " + (String)feedingPortions[lastFeeding-1]).c_str());     
+      u8g2.drawStr(140, 20, ("Repas:   " + (String)lastFeeding).c_str()); 
+        u8g2.drawStr(140, 40, ("Portions: " + (String)lastNbFeeding).c_str());      
       if(wifiConnected){ 
         u8g2.drawXBMP(0,50,15,15,wifi_icon);
       }
@@ -1120,6 +1119,8 @@ void setup()
   Serial.println("nbFeeding2 : " + (String)nbFeeding2);
   lastFeeding = prefs.getInt("lastFeeding", 1);
   Serial.println("lastFeeding : " + (String)lastFeeding);
+  lastNbFeeding = prefs.getInt("lastNbFeeding", 1);
+  Serial.println("lastNbFeeding : " + (String)lastNbFeeding);
   batTag = prefs.getInt("batTag", 0);
   Serial.println("batTag : " + (String)batTag);
   tagID = prefs.getInt("tagID", 0x00);
@@ -1528,8 +1529,12 @@ void loop()
         int mF = timeFeeding1.substring(3,5).toInt();
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding1;
-          lastFeeding = nbFeeding1;
+          lastFeeding = 1;
           prefs.putInt("lastFeeding", lastFeeding);
+          Serial.println("lastFeeding : " + (String)lastFeeding);
+          lastNbFeeding = nbFeeding;
+          prefs.putInt("lastNbFeeding", lastNbFeeding);
+          Serial.println("lastNbFeeding : " + (String)lastNbFeeding);
           if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
             printMenu(menu_selected);
           }
@@ -1540,8 +1545,12 @@ void loop()
         int mF = timeFeeding2.substring(3,5).toInt();
         if((mH == mF) || (mH+1 == mF) || (mH == 59 && mF==00)){
           nbFeeding = nbFeeding2;
-          lastFeeding = nbFeeding2;
+          lastFeeding = 2;
           prefs.putInt("lastFeeding", lastFeeding);
+          Serial.println("lastFeeding : " + (String)lastFeeding);
+          lastNbFeeding = nbFeeding;
+          prefs.putInt("lastNbFeeding", lastNbFeeding);
+          Serial.println("lastNbFeeding : " + (String)lastNbFeeding);
           if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
             printMenu(menu_selected);
           }
