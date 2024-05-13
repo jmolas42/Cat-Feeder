@@ -1500,6 +1500,7 @@ void loop()
         weight_g = 0;
         weight_ADC = getWeight();
         ADC_tare = weight_ADC;
+        prefs.putInt("ADC_tare", ADC_tare);
         prefs.putFloat("weight_g", weight_g);
         prefs.putInt("weight_ADC", weight_ADC);
         sendToInfluxDB();
