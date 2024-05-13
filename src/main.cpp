@@ -650,9 +650,9 @@ void printActionsMenuButtons(){
     u8g2.drawButtonUTF8(65,59, U8G2_BTN_BW1, 0, 0, 0, "Ajouter");
   }
   if(row == 3 && col == 2){
-    u8g2.drawButtonUTF8(134,59, U8G2_BTN_INV, 0, 1, 1, "Reset"); 
+    u8g2.drawButtonUTF8(134,59, U8G2_BTN_INV, 0, 1, 1, "Enlever"); 
   }else{
-    u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Reset"); 
+    u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Enlever"); 
   }
   if(row == 4 && col == 1){
     u8g2.drawXBMP(237,47,17,17,return_inv_icon);
