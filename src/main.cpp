@@ -871,7 +871,7 @@ void sendToInfluxDB(){
 
   // Store measured value into point
   // Report RSSI of currently connected network
-  weight_DB.addField("Weight_g", (int)weight_g);
+  weight_DB.addField("Weight_g", weight_g);
 
   // Print what are we exactly writing
   Serial.print("Writing: ");
