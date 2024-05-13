@@ -905,6 +905,10 @@ void updateWeight(){
   int w_var_absolute = w-ADC_tare;
   float weight_real = ((float)w_var_absolute/calibration);
 
+  if(weight_real < 0){
+    weight_real = 0;
+  }
+
   weight_g = 0.5*weight_g_var + 0.5*weight_real;
 
 
