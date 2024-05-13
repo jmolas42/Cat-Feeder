@@ -879,6 +879,10 @@ void sendToInfluxDB(){
 
   // Write point
   if (!client.writePoint(weight_DB)) {
+    networkConnected = false;
+    if(menu_selected == MAIN_MENU){ //on est sur la page d'accueil
+      printMenu(menu_selected);
+    } 
     Serial.print("InfluxDB write failed: ");
     Serial.println(client.getLastErrorMessage());
   }
