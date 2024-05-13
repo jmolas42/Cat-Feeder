@@ -590,7 +590,7 @@ void printMenu(Menus ms){
       u8g2.drawButtonUTF8(108,38, U8G2_BTN_BW1, 0, 0, 0, "Delivrer");
       u8g2.drawStr(0, 59, "Balise:"); 
       u8g2.drawButtonUTF8(65,59, U8G2_BTN_BW1, 0, 0, 0, "Ajouter");
-      u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Reset"); 
+      u8g2.drawButtonUTF8(134,59, U8G2_BTN_BW1, 0, 0, 0, "Enlever"); 
       u8g2.drawXBMP(237,47,17,17,return_icon);
       u8g2.drawFrame(236,46,20,18);
       break;
