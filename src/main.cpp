@@ -235,7 +235,7 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
     if(timerSecond % 300 == 0){ //5 minute
       readBattery = true;
     }
-    if(timerSecond % 60 == 0){ //minute
+    if(timerSecond % 20 == 0){ //20sec
       verifyNetwork = true;
     }
     if(timerSecond % 2 == 0){ //1 seconde
