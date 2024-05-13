@@ -68,6 +68,7 @@ Point weight_DB("weight");
 #define MAX_CONTCONV    0x02        // defaults to single-conversion. FYI the first 3 data from continuous are incorrect. 
 float weight_g = 0;
 int weight_ADC = 0;
+int ADC_tare = 0;
 float const calibration = 26.18;  //bits par gramme
 bool weightToBeUpdated = false;
 int weightToBeUpdated_counter = 0;
@@ -891,10 +892,18 @@ void updateWeight(){
   float weight_var_g = ((float)w_var/calibration);
   Serial.print("weight_var_g: ");
   Serial.println(weight_var_g);
-  weight_g += weight_var_g; //on ajoute le nouveau nombre de gramme
-  if(weight_g < 0){
-    weight_g = 0;
+  //poids avec var
+  float weight_g_var = weight_g + weight_var_g; //on ajoute le nouveau nombre de gramme
+  if(weight_g_var < 0){
+    weight_g_var = 0;
   }
+  //poids réel
+  int w_var_absolute = w-ADC_tare;
+  float weight_real = ((float)w_var_absolute/calibration);
+
+  weight_g = 0.5*weight_g_var + 0.5*weight_real;
+
+
   weight_ADC = w; //mets a jour la derniere valeur de l'ADC
   prefs.putFloat("weight_g", weight_g);
   prefs.putInt("weight_ADC", weight_ADC);
@@ -1131,6 +1140,9 @@ void setup()
   Serial.println("weight_g : " + (String)weight_g);
   weight_ADC = prefs.getInt("weight_ADC", 0);
   Serial.println("weight_ADC : " + (String)weight_ADC);
+  ADC_tare = prefs.getInt("ADC_tare", ADC_tare);
+  Serial.println("ADC_tare : " + (String)ADC_tare);
+  
 
   
 
@@ -1483,6 +1495,7 @@ void loop()
         setRGB(255,125,255); //rose pale
         weight_g = 0;
         weight_ADC = getWeight();
+        ADC_tare = weight_ADC;
         prefs.putFloat("weight_g", weight_g);
         prefs.putInt("weight_ADC", weight_ADC);
         sendToInfluxDB();
