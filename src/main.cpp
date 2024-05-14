@@ -886,6 +886,9 @@ void sendToInfluxDB(){
     Serial.print("InfluxDB write failed: ");
     Serial.println(client.getLastErrorMessage());
   }
+  else{
+    networkConnected = true;
+  }
 }
 
 void updateWeight(){
@@ -910,6 +913,9 @@ void updateWeight(){
   }
 
   weight_g = 0.5*weight_g_var + 0.5*weight_real;
+
+  Serial.println("weight_real : " + (String)weight_real);
+  Serial.println("weight_g_var : " + (String)weight_g_var);
 
 
   weight_ADC = w; //mets a jour la derniere valeur de l'ADC
@@ -1203,7 +1209,7 @@ void setup()
   digitalWrite(33, HIGH);           // set the SS pin HIGH
   delay(500);
 
-  if(weight_ADC == 0){//initialisation de weight_ADC
+  if(weight_ADC == 0 || weight_g == 0){//initialisation de weight_ADC
     //read ADC 6 times
     uint32_t value = 0;
     for(int i = 0; i<2; i++){
@@ -1224,7 +1230,10 @@ void setup()
     Serial.print("weight_ADC initialized at ");
     Serial.println(value);
     weight_g = 0;
+    ADC_tare = weight_ADC;
     prefs.putFloat("weight_g", weight_g);
+    prefs.putInt("ADC_tare", ADC_tare);
+    Serial.println("ADC_tare : " + (String)ADC_tare);
     Serial.println("weight_g : " + (String)weight_g);
   }
   SPI.end();
