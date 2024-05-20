@@ -235,7 +235,7 @@ void IRAM_ATTR onTimer()  //compteur de 500ms
     if(timerSecond % 300 == 0){ //5 minute
       readBattery = true;
     }
-    if(timerSecond % 20 == 0){ //20sec
+    if(timerSecond % 30 == 0){ //30sec
       verifyNetwork = true;
     }
     if(timerSecond % 2 == 0){ //1 seconde
@@ -1601,7 +1601,7 @@ void loop()
     }
 
     //Écran fermé
-    if(timerScreenNoActivity >30 && screenON){
+    if(timerScreenNoActivity >120 && screenON){
       Serial.println("Screen turned off");
       u8g2.sleepOn();
       screenON = false;
