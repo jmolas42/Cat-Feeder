@@ -69,7 +69,7 @@ Point weight_DB("weight");
 float weight_g = 0;
 int weight_ADC = 0;
 int ADC_tare = 0;
-float const calibration = 26.18;  //bits par gramme
+float const calibration = 21.4;  //bits par gramme
 bool weightToBeUpdated = false;
 int weightToBeUpdated_counter = 0;
 
