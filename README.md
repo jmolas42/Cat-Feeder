@@ -2,7 +2,7 @@
 
 ## Distributeur automatique de nourriture pour chat
 
-![Cat Feeder](<Photo et vidéo\Photo produit\PXL_20240520_163435130.jpg>)
+![Cat Feeder](Photo%20et%20vidéo/Photo%20produit/PXL_20240520_163435130.jpg)
 
 
 Préparez-vous à une innovation majeure dans la gestion alimentaire de vos compagnons félins ! Le distributeur automatique pour chats est une solution ingénieuse qui prend en charge la nourriture de votre animal de compagnie de manière autonome et efficace. Plus besoin de vous soucier des repas de votre chat, laissez cet appareil révolutionnaire s'occuper de tout, vous offrant ainsi une tranquillité d'esprit totale. Avec cette technologie de pointe, simplifiez votre quotidien et offrez à votre félin une expérience alimentaire optimale, tout en vous concentrant sur les moments importants de la vie.
