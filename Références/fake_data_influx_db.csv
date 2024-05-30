@@ -1,0 +1,16 @@
+#group,false,false,false,false,true,true,true
+#datatype,string,long,dateTime:RFC3339,double,string,string,string
+#default,mean,,,,,,
+,result,table,_time,_value,_field,_measurement,device
+,,0,2024-04-05T04:00:00Z,0.00,weight_g,weight,CatFeeder_0001
+,,0,2024-04-05T12:00:00Z,60.00,weight_g,weight,CatFeeder_0001
+,,1,2024-04-05T12:05:00Z,40.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-05T14:00:00Z,15.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-05T21:00:00Z,75.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-05T21:30:00Z,30.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-05T23:00:00Z,0.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-06T04:00:00Z,60.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-06T04:05:00Z,50.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-06T06:00:00Z,40.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-06T10:00:00Z,0.00,weight_g,weight,CatFeeder_0001
+,,2,2024-04-06T12:30:00Z,60.00,weight_g,weight,CatFeeder_0001

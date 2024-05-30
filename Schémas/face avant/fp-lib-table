@@ -1,0 +1,8 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "TSOP")(type "KiCad")(uri "${KIPRJMOD}/Lib/TSOP75338WTT/KiCADv6/footprints.pretty")(options "")(descr ""))
+  (lib (name "VL53L3CXV0DH_1 (1)")(type "KiCad")(uri "${KIPRJMOD}/Lib/VL53L3CXV0DH_1 (1)")(options "")(descr ""))
+  (lib (name "D6R")(type "KiCad")(uri "${KIPRJMOD}/Lib/D6R50F1LFS/KiCADv6/footprints.pretty")(options "")(descr ""))
+  (lib (name "Lib")(type "KiCad")(uri "${KIPRJMOD}/Lib.pretty")(options "")(descr ""))
+  (lib (name "cap_dig")(type "KiCad")(uri "C:/Users/jmola/OneDrive - Collège de Maisonneuve/H2024/Projet/Schémas/distributeur/Lib/EEE_1EA471P/KiCADv6/footprints.pretty")(options "")(descr ""))
+)

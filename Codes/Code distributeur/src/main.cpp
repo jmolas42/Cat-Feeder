@@ -1047,7 +1047,7 @@ bool readCapProx(){
   return(capProx);
 }
 
-void startCapProx(){
+void startCapDist(){
   digitalWrite(PIN_XSHUT_DIST, HIGH);
   bool ok = false;
   sensor.setTimeout(500);
@@ -1397,12 +1397,12 @@ void setup()
 
   //-----------------------------------------------------Capteur de distance
   pinMode(PIN_XSHUT_DIST, OUTPUT); //on essaie un reset du xshut du capteur de distance (résoue bug?)
+  startCapDist();
 
   //-----------------------------------------------------Capteur de proximité
   pinMode(PIN_OUT_PROX_1, INPUT);
   pinMode(PIN_OUT_PROX_2, INPUT);
   pinMode(PIN_IN_PROX, OUTPUT);
-  startCapProx();
 
   //-----------------------------------------------------Distribution
   pinMode(PIN_MOTOR_DIST, OUTPUT);
